@@ -19,7 +19,7 @@ GO_FLAGS := -trimpath -ldflags "$(LDFLAGS)"
 PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
 
 # FIX 1: Added 'frontend' here so Make ignores the folder of the same name
-.PHONY: all build frontend clean release test test-race test-coverage help mocks
+.PHONY: all build build-dev frontend clean release test test-race test-coverage help mocks
 
 # Default target
 all: clean test frontend release
@@ -29,7 +29,8 @@ help:
 	@echo "Water AI Makefile"
 	@echo "-----------------"
 	@echo "make all           - Clean, test, build frontend, and build release binaries"
-	@echo "make build         - Build binary for current OS (fast dev build)"
+	@echo "make build         - Build binary for current OS (includes frontend)"
+	@echo "make build-dev     - Build Go backend only (no Node.js required)"
 	@echo "make release       - Build optimized binaries for all platforms"
 	@echo "make frontend      - Build Next.js frontend and copy to embed folder"
 	@echo "make test          - Run standard unit tests"
@@ -108,6 +109,13 @@ frontend:
 
 build: frontend
 	@echo "--> Building local binary..."
+	@mkdir -p $(BIN_DIR)
+	@CGO_ENABLED=0 go build $(GO_FLAGS) -o $(BIN_DIR)/$(BINARY_NAME) ./cmd/water
+	@echo "Done! Run with: ./$(BIN_DIR)/$(BINARY_NAME)"
+
+# Build Go backend only (no Node.js/frontend required)
+build-dev: mocks
+	@echo "--> Building Go backend (dev mode, no frontend)..."
 	@mkdir -p $(BIN_DIR)
 	@CGO_ENABLED=0 go build $(GO_FLAGS) -o $(BIN_DIR)/$(BINARY_NAME) ./cmd/water
 	@echo "Done! Run with: ./$(BIN_DIR)/$(BINARY_NAME)"

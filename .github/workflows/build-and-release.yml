@@ -33,7 +33,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23' # Changed from 1.25 (doesn't exist yet) to stable
+          go-version: '1.24'
           cache: true
 
       - name: Setup Node.js (for Frontend)
@@ -64,8 +64,16 @@ jobs:
           tag: ${{ steps.get_version.outputs.version }}
 
       # ========================================================================
-      # 3. BUILD OPTIMIZED BINARIES
+      # 3. TEST & BUILD
       # ========================================================================
+      - name: Create Mock Assets
+        run: make mocks
+
+      - name: Run Tests
+        run: |
+          go vet ./...
+          go test ./... -count=1
+
       - name: Build Optimized Binaries
         run: |
           make clean
