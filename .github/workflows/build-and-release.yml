@@ -6,6 +6,7 @@ on:
       - master
       - main
       - development
+      - gui
     paths-ignore:
       - '**.md'
       - 'docs/**'
