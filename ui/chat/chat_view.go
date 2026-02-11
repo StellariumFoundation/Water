@@ -72,6 +72,10 @@ func (cv *ChatView) handleSubmit(text string) {
 	// Clear input
 	cv.inputArea.SetText("")
 
+	// Get attached files
+	files := cv.inputArea.GetAttachedFiles()
+	cv.inputArea.ClearAttachedFiles()
+
 	// Show loading indicator
 	cv.state.IsLoading = true
 	cv.loadingBox.Show()
@@ -81,8 +85,8 @@ func (cv *ChatView) handleSubmit(text string) {
 		cv.wsClient.InitAgent(cv.state.SelectedModel, map[string]interface{}{}, 0)
 	}
 
-	// Send query
-	cv.wsClient.SendQuery(text, len(cv.state.Messages) > 1, nil)
+	// Send query with files
+	cv.wsClient.SendQuery(text, len(cv.state.Messages) > 1, files)
 
 	// Refresh UI
 	cv.Refresh()

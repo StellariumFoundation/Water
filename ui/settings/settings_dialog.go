@@ -153,7 +153,11 @@ func (sd *SettingsDialog) saveSettings() {
 // Show shows the settings dialog
 func (sd *SettingsDialog) Show() {
 	// Update connection status before showing
+	if sd.state.IsConnected {
+		// Connection status label is set during creation
+	}
 	sd.dialog.Show()
+	sd.dialog.Resize(fyne.NewSize(400, 500))
 }
 
 // Hide hides the settings dialog

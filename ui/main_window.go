@@ -41,6 +41,7 @@ type MainWindow struct {
 	// Status
 	connectionStatus *widget.Label
 	connectionIcon   *widget.Icon
+	workspaceLabel   *widget.Label
 }
 
 // NewMainWindow creates a new main window
@@ -166,14 +167,8 @@ func (mw *MainWindow) createStatusBar() fyne.CanvasObject {
 	workspaceLabel := widget.NewLabel("")
 	workspaceLabel.Importance = widget.LowImportance
 
-	// Update workspace label when state changes
-	go func() {
-		for {
-			if mw.state.WorkspacePath != "" {
-				workspaceLabel.SetText("📁 " + mw.state.WorkspacePath)
-			}
-		}
-	}()
+	// Store reference for updates
+	mw.workspaceLabel = workspaceLabel
 
 	return container.NewBorder(
 		nil, nil,
@@ -251,31 +246,40 @@ func (mw *MainWindow) updateConnectionStatus(connected bool, status string) {
 // onStateChange handles state changes
 func (mw *MainWindow) onStateChange() {
 	// Update UI components on the main thread
-	mw.chatView.Refresh()
-	mw.browserPanel.Refresh()
-	mw.codePanel.Refresh()
-	mw.terminalPanel.Refresh()
+	fyne.CurrentApp().Driver().RunOnMainGoroutine(func() {
+		mw.chatView.Refresh()
+		mw.browserPanel.Refresh()
+		mw.codePanel.Refresh()
+		mw.terminalPanel.Refresh()
+
+		// Update workspace label
+		if mw.workspaceLabel != nil && mw.state.WorkspacePath != "" {
+			mw.workspaceLabel.SetText("📁 " + mw.state.WorkspacePath)
+		}
+	})
 }
 
 // onEvent handles WebSocket events
 func (mw *MainWindow) onEvent(eventType string, content interface{}) {
-	// Handle specific events
-	switch eventType {
-	case client.EventTypeToolCall:
-		if tc, ok := content.(client.ToolCallEvent); ok {
-			mw.handleToolCall(tc)
+	// Handle specific events on the main thread
+	fyne.CurrentApp().Driver().RunOnMainGoroutine(func() {
+		switch eventType {
+		case client.EventTypeToolCall:
+			if tc, ok := content.(client.ToolCallEvent); ok {
+				mw.handleToolCall(tc)
+			}
+		case client.EventTypeToolResult:
+			if tr, ok := content.(client.ToolResultEvent); ok {
+				mw.handleToolResult(tr)
+			}
+		case client.EventTypeProcessing:
+			mw.chatView.SetLoadingText("Processing...")
+			mw.chatView.ShowLoading()
+		case client.EventTypeStreamComplete:
+			mw.chatView.HideLoading()
+			mw.state.IsLoading = false
 		}
-	case client.EventTypeToolResult:
-		if tr, ok := content.(client.ToolResultEvent); ok {
-			mw.handleToolResult(tr)
-		}
-	case client.EventTypeProcessing:
-		mw.chatView.SetLoadingText("Processing...")
-		mw.chatView.ShowLoading()
-	case client.EventTypeStreamComplete:
-		mw.chatView.HideLoading()
-		mw.state.IsLoading = false
-	}
+	})
 }
 
 // handleToolCall handles tool call events
@@ -317,12 +321,16 @@ func (mw *MainWindow) handleToolResult(tr client.ToolResultEvent) {
 
 // onConnected handles connection established
 func (mw *MainWindow) onConnected() {
-	mw.updateConnectionStatus(true, "Connected")
+	fyne.CurrentApp().Driver().RunOnMainGoroutine(func() {
+		mw.updateConnectionStatus(true, "Connected")
+	})
 }
 
 // onDisconnected handles disconnection
 func (mw *MainWindow) onDisconnected() {
-	mw.updateConnectionStatus(false, "Disconnected")
+	fyne.CurrentApp().Driver().RunOnMainGoroutine(func() {
+		mw.updateConnectionStatus(false, "Disconnected")
+	})
 }
 
 // onClose handles window close

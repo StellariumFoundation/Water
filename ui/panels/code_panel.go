@@ -1,6 +1,7 @@
 package panels
 
 import (
+	"fmt"
 	"water-ai/client"
 
 	"fyne.io/fyne/v2"
@@ -96,7 +97,7 @@ func (cp *CodePanel) updateLineNumbers(content string) {
 	// Generate line numbers
 	numStr := ""
 	for i := 1; i <= lines; i++ {
-		numStr += string(rune('0'+i%10)) + "\n"
+		numStr += fmt.Sprintf("%d\n", i)
 	}
 	cp.lineNumbers.SetText(numStr)
 }

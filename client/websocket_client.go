@@ -39,7 +39,12 @@ func NewWebSocketClient(serverURL string, state *AppState) *WebSocketClient {
 func (c *WebSocketClient) Connect() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.connectInternal()
+}
 
+// connectInternal establishes a WebSocket connection without locking
+// This is used internally for reconnection attempts
+func (c *WebSocketClient) connectInternal() error {
 	u, err := url.Parse(c.url)
 	if err != nil {
 		return err
@@ -273,11 +278,16 @@ func (c *WebSocketClient) pingLoop() {
 
 // reconnectLoop attempts to reconnect to the server
 func (c *WebSocketClient) reconnectLoop() {
+	// Create a new stopChan for reconnection attempts
+	c.mu.Lock()
+	c.stopChan = make(chan struct{})
+	c.mu.Unlock()
+
 	for i := 0; i < 5 && c.reconnect; i++ {
 		time.Sleep(time.Duration(i+1) * time.Second)
 		log.Printf("Attempting to reconnect (%d/5)...", i+1)
 		
-		if err := c.Connect(); err == nil {
+		if err := c.connectInternal(); err == nil {
 			log.Println("Reconnected successfully")
 			return
 		}
