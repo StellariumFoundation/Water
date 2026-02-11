@@ -20,6 +20,8 @@ type CodePanel struct {
 	fileLabel   *widget.Label
 	codeEntry   *widget.Entry
 	scroll      *container.Scroll
+	emptyLabel  *widget.Label
+	lineNumbers *widget.Label
 }
 
 // NewCodePanel creates a new code panel
@@ -38,20 +40,37 @@ func (cp *CodePanel) createUI() {
 	cp.fileLabel = widget.NewLabel("No file selected")
 	cp.fileLabel.TextStyle = fyne.TextStyle{Bold: true}
 
+	// Empty state label
+	cp.emptyLabel = widget.NewLabel("No code to display yet.\n\nWhen the AI reads or writes code, it will appear here.")
+	cp.emptyLabel.Alignment = fyne.TextAlignCenter
+	cp.emptyLabel.Importance = widget.LowImportance
+
+	// Line numbers
+	cp.lineNumbers = widget.NewLabel("")
+	cp.lineNumbers.TextStyle = fyne.TextStyle{Monospace: true}
+	cp.lineNumbers.Importance = widget.LowImportance
+
 	// Code entry (read-only)
 	cp.codeEntry = widget.NewMultiLineEntry()
 	cp.codeEntry.SetPlaceHolder("Code will appear here...")
 	cp.codeEntry.Wrapping = fyne.TextWrapWord
+	cp.codeEntry.TextStyle = fyne.TextStyle{Monospace: true}
 	cp.codeEntry.Disable() // Read-only
 
 	// Scroll container
-	cp.scroll = container.NewScroll(cp.codeEntry)
+	cp.scroll = container.NewScroll(cp.emptyLabel)
 	cp.scroll.SetMinSize(fyne.NewSize(600, 400))
 }
 
 // SetContent sets the code content
 func (cp *CodePanel) SetContent(content string) {
 	cp.codeEntry.SetText(content)
+	cp.scroll.Content = container.NewHSplit(
+		cp.lineNumbers,
+		cp.codeEntry,
+	)
+	cp.scroll.Content.(*container.Split).SetOffset(0.05)
+	cp.updateLineNumbers(content)
 }
 
 // SetFile sets the current file name
@@ -59,10 +78,38 @@ func (cp *CodePanel) SetFile(filename string) {
 	cp.fileLabel.SetText(filename)
 }
 
+// updateLineNumbers updates the line numbers display
+func (cp *CodePanel) updateLineNumbers(content string) {
+	if content == "" {
+		cp.lineNumbers.SetText("")
+		return
+	}
+
+	// Count lines
+	lines := 1
+	for _, c := range content {
+		if c == '\n' {
+			lines++
+		}
+	}
+
+	// Generate line numbers
+	numStr := ""
+	for i := 1; i <= lines; i++ {
+		numStr += string(rune('0'+i%10)) + "\n"
+	}
+	cp.lineNumbers.SetText(numStr)
+}
+
 // Refresh updates the code panel
 func (cp *CodePanel) Refresh() {
 	if cp.state.CodeContent != "" {
 		cp.codeEntry.SetText(cp.state.CodeContent)
+		cp.updateLineNumbers(cp.state.CodeContent)
+		cp.scroll.Content = container.NewHSplit(
+			cp.lineNumbers,
+			cp.codeEntry,
+		)
 	}
 
 	if cp.state.CodeFile != "" {
@@ -74,15 +121,24 @@ func (cp *CodePanel) Refresh() {
 
 // CreateRenderer creates the widget renderer
 func (cp *CodePanel) CreateRenderer() fyne.WidgetRenderer {
-	// Toolbar
+	// Copy button
 	copyBtn := widget.NewButtonWithIcon("Copy", theme.ContentCopyIcon(), func() {
-		// TODO: Copy to clipboard
+		// Copy to clipboard
+		if cp.codeEntry.Text != "" {
+			fyne.CurrentApp().Driver().AllWindows()[0].Clipboard().SetContent(cp.codeEntry.Text)
+		}
 	})
 
+	// Language label
+	langLabel := widget.NewLabel("")
+	langLabel.Importance = widget.LowImportance
+
+	// Toolbar
 	toolbar := container.NewHBox(
 		widget.NewIcon(theme.FileTextIcon()),
 		cp.fileLabel,
 		layout.NewSpacer(),
+		langLabel,
 		copyBtn,
 	)
 

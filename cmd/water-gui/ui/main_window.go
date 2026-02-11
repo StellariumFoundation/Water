@@ -11,6 +11,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -28,14 +29,18 @@ type MainWindow struct {
 	wsClient    *client.WebSocketClient
 
 	// UI Components
-	chatView      *chat.ChatView
-	browserPanel  *panels.BrowserPanel
-	codePanel     *panels.CodePanel
-	terminalPanel *panels.TerminalPanel
+	chatView       *chat.ChatView
+	browserPanel   *panels.BrowserPanel
+	codePanel      *panels.CodePanel
+	terminalPanel  *panels.TerminalPanel
 	settingsDialog *settings.SettingsDialog
 
 	// Tabs
 	panelTabs *container.AppTabs
+
+	// Status
+	connectionStatus *widget.Label
+	connectionIcon   *widget.Icon
 }
 
 // NewMainWindow creates a new main window
@@ -58,11 +63,17 @@ func NewMainWindow(app fyne.App) *MainWindow {
 	// Set window size
 	mw.window.Resize(fyne.NewSize(1200, 800))
 
+	// Set window icon
+	mw.window.SetIcon(resources.GetLogoOnly())
+
 	// Create UI components
 	mw.createUI()
 
 	// Set up window close handler
 	mw.window.SetCloseIntercept(mw.onClose)
+
+	// Set up keyboard shortcuts
+	mw.setupKeyboardShortcuts()
 
 	return mw
 }
@@ -123,6 +134,10 @@ func (mw *MainWindow) createHeader() fyne.CanvasObject {
 
 	title := widget.NewLabelWithStyle("Water AI", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})
 
+	// New chat button
+	newChatBtn := widget.NewButtonWithIcon("New Chat", theme.ContentAddIcon(), mw.onNewChat)
+
+	// Settings button
 	settingsBtn := widget.NewButtonWithIcon("", theme.SettingsIcon(), func() {
 		mw.settingsDialog.Show()
 	})
@@ -134,6 +149,7 @@ func (mw *MainWindow) createHeader() fyne.CanvasObject {
 			title,
 		),
 		container.NewHBox(
+			newChatBtn,
 			settingsBtn,
 		),
 	)
@@ -141,22 +157,95 @@ func (mw *MainWindow) createHeader() fyne.CanvasObject {
 
 // createStatusBar creates the status bar
 func (mw *MainWindow) createStatusBar() fyne.CanvasObject {
-	connectionStatus := widget.NewLabel("Disconnected")
-	connectionStatus.Importance = widget.LowImportance
+	// Connection status
+	mw.connectionIcon = widget.NewIcon(theme.CancelIcon())
+	mw.connectionStatus = widget.NewLabel("Disconnected")
+	mw.connectionStatus.Importance = widget.LowImportance
 
-	// Update connection status based on state
-	if mw.state.IsConnected {
-		connectionStatus.SetText("Connected")
-	}
+	// Workspace path
+	workspaceLabel := widget.NewLabel("")
+	workspaceLabel.Importance = widget.LowImportance
+
+	// Update workspace label when state changes
+	go func() {
+		for {
+			if mw.state.WorkspacePath != "" {
+				workspaceLabel.SetText("📁 " + mw.state.WorkspacePath)
+			}
+		}
+	}()
 
 	return container.NewBorder(
 		nil, nil,
 		container.NewHBox(
-			widget.NewIcon(theme.DownloadIcon()),
-			connectionStatus,
+			mw.connectionIcon,
+			mw.connectionStatus,
+			widget.NewSeparator(),
+			workspaceLabel,
 		),
 		nil,
 	)
+}
+
+// setupKeyboardShortcuts sets up keyboard shortcuts
+func (mw *MainWindow) setupKeyboardShortcuts() {
+	// Ctrl+N: New chat
+	mw.window.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyN, Modifier: fyne.KeyModifierControl}, func(_ fyne.Shortcut) {
+		mw.onNewChat()
+	})
+
+	// Ctrl+,: Settings
+	mw.window.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyComma, Modifier: fyne.KeyModifierControl}, func(_ fyne.Shortcut) {
+		mw.settingsDialog.Show()
+	})
+
+	// Ctrl+Q: Quit
+	mw.window.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyQ, Modifier: fyne.KeyModifierControl}, func(_ fyne.Shortcut) {
+		mw.onClose()
+	})
+
+	// F5: Refresh connection
+	mw.window.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyF5}, func(_ fyne.Shortcut) {
+		mw.reconnect()
+	})
+}
+
+// onNewChat handles new chat action
+func (mw *MainWindow) onNewChat() {
+	// Clear messages
+	mw.state.ClearMessages()
+	mw.state.IsAgentInitialized = false
+
+	// Refresh UI
+	mw.chatView.Refresh()
+}
+
+// reconnect attempts to reconnect to the server
+func (mw *MainWindow) reconnect() {
+	if mw.state.IsConnected {
+		mw.wsClient.Disconnect()
+	}
+
+	mw.updateConnectionStatus(false, "Reconnecting...")
+
+	go func() {
+		if err := mw.wsClient.Connect(); err != nil {
+			mw.app.SendNotification(&fyne.Notification{
+				Title:   "Connection Error",
+				Content: "Failed to connect to server: " + err.Error(),
+			})
+		}
+	}()
+}
+
+// updateConnectionStatus updates the connection status display
+func (mw *MainWindow) updateConnectionStatus(connected bool, status string) {
+	mw.connectionStatus.SetText(status)
+	if connected {
+		mw.connectionIcon.SetResource(theme.ConfirmIcon())
+	} else {
+		mw.connectionIcon.SetResource(theme.CancelIcon())
+	}
 }
 
 // onStateChange handles state changes
@@ -180,6 +269,12 @@ func (mw *MainWindow) onEvent(eventType string, content interface{}) {
 		if tr, ok := content.(client.ToolResultEvent); ok {
 			mw.handleToolResult(tr)
 		}
+	case client.EventTypeProcessing:
+		mw.chatView.SetLoadingText("Processing...")
+		mw.chatView.ShowLoading()
+	case client.EventTypeStreamComplete:
+		mw.chatView.HideLoading()
+		mw.state.IsLoading = false
 	}
 }
 
@@ -187,12 +282,17 @@ func (mw *MainWindow) onEvent(eventType string, content interface{}) {
 func (mw *MainWindow) handleToolCall(tc client.ToolCallEvent) {
 	// Switch to appropriate tab based on tool
 	switch tc.ToolName {
-	case "browser_view", "browser_click", "browser_enter_text", "browser_navigate":
+	case "browser_view", "browser_click", "browser_enter_text", "browser_navigate", "browser_screenshot":
 		mw.panelTabs.SelectIndex(0) // Browser tab
+		mw.chatView.SetLoadingText("Browsing...")
 	case "write_file", "read_file", "edit_file":
 		mw.panelTabs.SelectIndex(1) // Code tab
+		mw.chatView.SetLoadingText("Working on code...")
 	case "execute_command":
 		mw.panelTabs.SelectIndex(2) // Terminal tab
+		mw.chatView.SetLoadingText("Running command...")
+	default:
+		mw.chatView.SetLoadingText("Working...")
 	}
 }
 
@@ -217,12 +317,12 @@ func (mw *MainWindow) handleToolResult(tr client.ToolResultEvent) {
 
 // onConnected handles connection established
 func (mw *MainWindow) onConnected() {
-	// Update status bar
+	mw.updateConnectionStatus(true, "Connected")
 }
 
 // onDisconnected handles disconnection
 func (mw *MainWindow) onDisconnected() {
-	// Update status bar
+	mw.updateConnectionStatus(false, "Disconnected")
 }
 
 // onClose handles window close
@@ -245,6 +345,9 @@ func (mw *MainWindow) onClose() {
 func (mw *MainWindow) ShowAndRun() {
 	// Show the window
 	mw.window.Show()
+
+	// Set initial connection status
+	mw.updateConnectionStatus(false, "Connecting...")
 
 	// Attempt to connect to the server
 	go func() {

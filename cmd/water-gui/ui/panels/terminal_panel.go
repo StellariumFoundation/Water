@@ -18,9 +18,10 @@ type TerminalPanel struct {
 	state *client.AppState
 
 	// UI Components
-	output     *widget.Label
-	scroll     *container.Scroll
-	outputText strings.Builder
+	output      *widget.Label
+	scroll      *container.Scroll
+	outputText  strings.Builder
+	emptyLabel  *widget.Label
 }
 
 // NewTerminalPanel creates a new terminal panel
@@ -35,6 +36,11 @@ func NewTerminalPanel(state *client.AppState) *TerminalPanel {
 
 // createUI creates the terminal panel UI components
 func (tp *TerminalPanel) createUI() {
+	// Empty state label
+	tp.emptyLabel = widget.NewLabel("No terminal output yet.\n\nWhen the AI runs commands, output will appear here.")
+	tp.emptyLabel.Alignment = fyne.TextAlignCenter
+	tp.emptyLabel.Importance = widget.LowImportance
+
 	// Output label (monospace)
 	tp.output = widget.NewLabel("")
 	tp.output.TextStyle = fyne.TextStyle{Monospace: true}
@@ -42,7 +48,7 @@ func (tp *TerminalPanel) createUI() {
 	tp.output.Alignment = fyne.TextAlignLeading
 
 	// Scroll container
-	tp.scroll = container.NewVScroll(tp.output)
+	tp.scroll = container.NewVScroll(tp.emptyLabel)
 	tp.scroll.SetMinSize(fyne.NewSize(600, 400))
 }
 
@@ -51,8 +57,7 @@ func (tp *TerminalPanel) AppendOutput(text string) {
 	tp.outputText.WriteString(text)
 	tp.outputText.WriteString("\n")
 	tp.output.SetText(tp.outputText.String())
-	
-	// Scroll to bottom
+	tp.scroll.Content = tp.output
 	tp.scroll.ScrollToBottom()
 }
 
@@ -60,36 +65,47 @@ func (tp *TerminalPanel) AppendOutput(text string) {
 func (tp *TerminalPanel) ClearOutput() {
 	tp.outputText.Reset()
 	tp.output.SetText("")
+	tp.scroll.Content = tp.emptyLabel
 }
 
 // Refresh updates the terminal panel
 func (tp *TerminalPanel) Refresh() {
 	if tp.state.TerminalOutput != "" {
 		tp.output.SetText(tp.state.TerminalOutput)
+		tp.scroll.Content = tp.output
 	}
 	tp.BaseWidget.Refresh()
 }
 
 // CreateRenderer creates the widget renderer
 func (tp *TerminalPanel) CreateRenderer() fyne.WidgetRenderer {
-	// Toolbar
+	// Clear button
 	clearBtn := widget.NewButtonWithIcon("Clear", theme.DeleteIcon(), func() {
 		tp.ClearOutput()
 	})
 
+	// Copy button
+	copyBtn := widget.NewButtonWithIcon("Copy", theme.ContentCopyIcon(), func() {
+		if tp.output.Text != "" {
+			fyne.CurrentApp().Driver().AllWindows()[0].Clipboard().SetContent(tp.output.Text)
+		}
+	})
+
+	// Toolbar
 	toolbar := container.NewHBox(
 		widget.NewIcon(theme.DocumentIcon()),
 		widget.NewLabel("Terminal Output"),
 		layout.NewSpacer(),
+		copyBtn,
 		clearBtn,
 	)
 
 	// Main content with dark background
 	content := container.NewBorder(
-		toolbar,  // top
-		nil,      // bottom
-		nil,      // left
-		nil,      // right
+		toolbar,   // top
+		nil,       // bottom
+		nil,       // left
+		nil,       // right
 		tp.scroll, // center
 	)
 

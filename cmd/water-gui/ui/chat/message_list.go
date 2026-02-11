@@ -2,6 +2,7 @@ package chat
 
 import (
 	"fmt"
+	"strings"
 	"water-ai/cmd/water-gui/client"
 
 	"fyne.io/fyne/v2"
@@ -15,13 +16,14 @@ type MessageList struct {
 	widget.BaseWidget
 
 	state *client.AppState
-	items []fyne.CanvasObject
+	box   *fyne.Container
 }
 
 // NewMessageList creates a new message list
 func NewMessageList(state *client.AppState) *MessageList {
 	ml := &MessageList{
 		state: state,
+		box:   container.NewVBox(),
 	}
 	ml.ExtendBaseWidget(ml)
 	return ml
@@ -29,13 +31,15 @@ func NewMessageList(state *client.AppState) *MessageList {
 
 // Refresh updates the message list
 func (ml *MessageList) Refresh() {
-	ml.items = nil
+	// Clear existing items
+	ml.box.Objects = nil
 
+	// Add all visible messages
 	for _, msg := range ml.state.Messages {
 		if msg.IsHidden {
 			continue
 		}
-		ml.items = append(ml.items, NewMessageItem(msg))
+		ml.box.Add(NewMessageItem(msg))
 	}
 
 	ml.BaseWidget.Refresh()
@@ -43,8 +47,7 @@ func (ml *MessageList) Refresh() {
 
 // CreateRenderer creates the widget renderer
 func (ml *MessageList) CreateRenderer() fyne.WidgetRenderer {
-	container := container.NewVBox()
-	return widget.NewSimpleRenderer(container)
+	return widget.NewSimpleRenderer(ml.box)
 }
 
 // MinSize returns the minimum size
@@ -73,32 +76,27 @@ func (mi *MessageItem) CreateRenderer() fyne.WidgetRenderer {
 	// Determine style based on role
 	var icon fyne.Resource
 	var roleLabel string
-	var bgColor fyne.Color
 
 	switch mi.message.Role {
 	case "user":
 		icon = theme.AccountIcon()
 		roleLabel = "You"
-		bgColor = theme.PrimaryColor()
 	case "assistant":
 		icon = theme.ComputerIcon()
 		roleLabel = "Water AI"
-		bgColor = theme.DisabledColor()
 	default:
 		icon = theme.InfoIcon()
 		roleLabel = "System"
-		bgColor = theme.DisabledColor()
 	}
 
-	// Create header
+	// Create header with icon and role
 	header := container.NewHBox(
 		widget.NewIcon(icon),
 		widget.NewLabelWithStyle(roleLabel, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 	)
 
-	// Create content
-	content := widget.NewLabel(mi.message.Content)
-	content.Wrapping = fyne.TextWrapWord
+	// Create content with basic markdown support
+	content := NewMarkdownLabel(mi.message.Content)
 
 	// Create message container
 	messageContainer := container.NewVBox(
@@ -107,16 +105,8 @@ func (mi *MessageItem) CreateRenderer() fyne.WidgetRenderer {
 		content,
 	)
 
-	// Add padding based on role
-	var padding fyne.CanvasObject
-	if mi.message.Role == "user" {
-		padding = container.NewBorder(nil, nil, nil, widget.NewLabel(""), messageContainer)
-	} else {
-		padding = container.NewBorder(nil, nil, widget.NewLabel(""), nil, messageContainer)
-	}
-
 	// Create card-like appearance
-	card := widget.NewCard("", "", padding)
+	card := widget.NewCard("", "", messageContainer)
 
 	return widget.NewSimpleRenderer(card)
 }
@@ -128,12 +118,117 @@ func (mi *MessageItem) MinSize() fyne.Size {
 
 // String returns a string representation
 func (mi *MessageItem) String() string {
-	return fmt.Sprintf("Message[%s]: %s", mi.message.Role, mi.message.Content[:min(50, len(mi.message.Content))])
+	content := mi.message.Content
+	if len(content) > 50 {
+		content = content[:50]
+	}
+	return fmt.Sprintf("Message[%s]: %s", mi.message.Role, content)
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
+// MarkdownLabel is a label that supports basic markdown formatting
+type MarkdownLabel struct {
+	widget.BaseWidget
+
+	text    string
+	content *fyne.Container
+}
+
+// NewMarkdownLabel creates a new markdown label
+func NewMarkdownLabel(text string) *MarkdownLabel {
+	ml := &MarkdownLabel{
+		text:    text,
+		content: container.NewVBox(),
 	}
-	return b
+	ml.ExtendBaseWidget(ml)
+	ml.parseMarkdown()
+	return ml
+}
+
+// parseMarkdown parses basic markdown and creates widgets
+func (ml *MarkdownLabel) parseMarkdown() {
+	ml.content.Objects = nil
+
+	// Split into lines
+	lines := strings.Split(ml.text, "\n")
+
+	for _, line := range lines {
+		// Handle code blocks
+		if strings.HasPrefix(line, "```") {
+			// Skip code block markers for now
+			continue
+		}
+
+		// Handle headers
+		if strings.HasPrefix(line, "### ") {
+			text := strings.TrimPrefix(line, "### ")
+			ml.content.Add(widget.NewLabelWithStyle(text, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+			continue
+		}
+		if strings.HasPrefix(line, "## ") {
+			text := strings.TrimPrefix(line, "## ")
+			ml.content.Add(widget.NewLabelWithStyle(text, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+			continue
+		}
+		if strings.HasPrefix(line, "# ") {
+			text := strings.TrimPrefix(line, "# ")
+			ml.content.Add(widget.NewLabelWithStyle(text, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+			continue
+		}
+
+		// Handle bullet points
+		if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
+			text := "  • " + strings.TrimPrefix(strings.TrimPrefix(line, "- "), "* ")
+			ml.content.Add(widget.NewLabel(text))
+			continue
+		}
+
+		// Handle numbered lists
+		if len(line) > 2 && line[1] == '.' && line[0] >= '0' && line[0] <= '9' {
+			ml.content.Add(widget.NewLabel("  " + line))
+			continue
+		}
+
+		// Handle inline code
+		if strings.Contains(line, "`") {
+			line = ml.processInlineCode(line)
+		}
+
+		// Handle bold text
+		if strings.Contains(line, "**") {
+			line = ml.processBold(line)
+		}
+
+		// Regular text
+		if line == "" {
+			ml.content.Add(widget.NewLabel(" "))
+		} else {
+			label := widget.NewLabel(line)
+			label.Wrapping = fyne.TextWrapWord
+			ml.content.Add(label)
+		}
+	}
+}
+
+// processInlineCode processes inline code markers
+func (ml *MarkdownLabel) processInlineCode(text string) string {
+	// Simple replacement - just remove backticks for now
+	return strings.ReplaceAll(text, "`", "'")
+}
+
+// processBold processes bold text markers
+func (ml *MarkdownLabel) processBold(text string) string {
+	// Simple replacement - just remove ** for now
+	return strings.ReplaceAll(text, "**", "")
+}
+
+// SetText sets the label text
+func (ml *MarkdownLabel) SetText(text string) {
+	ml.text = text
+	ml.parseMarkdown()
+	ml.Refresh()
+}
+
+// CreateRenderer creates the widget renderer
+func (ml *MarkdownLabel) CreateRenderer() fyne.WidgetRenderer {
+	return widget.NewSimpleRenderer(ml.content)
 }
