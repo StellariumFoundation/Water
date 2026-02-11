@@ -1,3 +1,18 @@
+# ==============================================================================
+# WATER AI - CI/CD PIPELINE
+# ==============================================================================
+#
+# This workflow uses the Makefile for all build operations.
+# The Makefile handles all complexity - CI just orchestrates.
+#
+# Jobs:
+#   1. test      - Run tests, linting, security scans
+#   2. build-cli - Build CLI binaries for all platforms
+#   3. build-gui - Build GUI binaries for each platform
+#   4. release   - Create GitHub release with artifacts
+#
+# ==============================================================================
+
 name: Build and Release
 
 on:
@@ -10,83 +25,306 @@ on:
     paths-ignore:
       - '**.md'
       - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
   pull_request:
     branches:
       - master
       - main
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create a release'
+        required: false
+        default: 'false'
+        type: boolean
+      version:
+        description: 'Version override (e.g., v1.0.0)'
+        required: false
+        type: string
 
 permissions:
-  contents: write # REQUIRED: to create tags and releases
+  contents: write
+  security-events: write
+
+env:
+  GO_VERSION: '1.24'
 
 jobs:
-  build-and-release:
+  # ============================================================================
+  # JOB 1: TEST & QUALITY
+  # ============================================================================
+  test:
+    name: Test & Quality
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      should_release: ${{ steps.version.outputs.should_release }}
     
     steps:
-      # ========================================================================
-      # 1. SETUP & DEPENDENCIES
-      # ========================================================================
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23' # Changed from 1.25 (doesn't exist yet) to stable
+          go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: Setup Node.js (for Frontend)
-        uses: actions/setup-node@v4
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v6
         with:
-          node-version: '20'
-          cache: 'yarn'
-          cache-dependency-path: frontend/yarn.lock
+          version: latest
+          install-only: true
 
-      # ========================================================================
-      # 2. VERSION CHECK (FROM MAKEFILE)
-      # ========================================================================
-      - name: Extract Version from Makefile
-        id: get_version
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Extract Version
+        id: version
         run: |
-          VER=$(grep "^VERSION" Makefile | head -n 1 | sed 's/VERSION.*=[[:space:]]*//g')
-          if [ -z "$VER" ]; then
-            echo "Error: Could not extract VERSION from Makefile"
-            exit 1
+          # Get version from input, Makefile, or git
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            # Try Makefile first, then git tag
+            MAKEFILE_VER=$(grep "^VERSION" Makefile 2>/dev/null | head -n 1 | sed 's/VERSION.*=[[:space:]]*//g' || echo "")
+            if [ -n "$MAKEFILE_VER" ] && [ "$MAKEFILE_VER" != "v0.1.0-dev" ]; then
+              VERSION="$MAKEFILE_VER"
+            else
+              VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "v0.1.0-dev")
+            fi
           fi
-          echo "Found version: $VER"
-          echo "version=$VER" >> $GITHUB_OUTPUT
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Found version: $VERSION"
+          
+          # Determine if we should release
+          SHOULD_RELEASE="false"
+          if [[ "${{ github.event.inputs.create_release }}" == "true" ]]; then
+            SHOULD_RELEASE="true"
+          elif [[ "${{ github.ref }}" == "refs/heads/master" || "${{ github.ref }}" == "refs/heads/main" ]]; then
+            if ! git rev-parse "refs/tags/$VERSION" >/dev/null 2>&1; then
+              SHOULD_RELEASE="true"
+            fi
+          fi
+          echo "should_release=$SHOULD_RELEASE" >> $GITHUB_OUTPUT
+          echo "Should release: $SHOULD_RELEASE"
 
-      - name: Check if Tag Exists
-        id: check_tag
-        uses: mukunku/tag-exists-action@v1.6.0
-        with: 
-          tag: ${{ steps.get_version.outputs.version }}
+      - name: Run CI Test Pipeline
+        run: make ci-test
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
 
-      # ========================================================================
-      # 3. BUILD OPTIMIZED BINARIES
-      # ========================================================================
-      - name: Build Optimized Binaries
-        run: |
-          make clean
-          make release
-        # 'make clean' ensures previous artifacts don't block fresh embedding
-
-      # ========================================================================
-      # 4. PUBLISH RELEASE
-      # ========================================================================
-      - name: Create Release
-        if: |
-          (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && 
-          steps.check_tag.outputs.exists == 'false'
-        uses: softprops/action-gh-release@v1
+      - name: Upload Coverage
+        uses: codecov/codecov-action@v4
         with:
-          tag_name: ${{ steps.get_version.outputs.version }}
-          name: "Water AI ${{ steps.get_version.outputs.version }}"
+          files: coverage/coverage.out
+          fail_ci_if_error: false
+
+  # ============================================================================
+  # JOB 2: BUILD CLI (All Platforms)
+  # ============================================================================
+  build-cli:
+    name: Build CLI
+    needs: test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build CLI Release
+        run: make release-cli
+        env:
+          VERSION: ${{ needs.test.outputs.version }}
+
+      - name: Upload CLI Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: water-cli
+          path: dist/*
+          retention-days: 7
+
+  # ============================================================================
+  # JOB 3: BUILD GUI (Platform-Specific)
+  # ============================================================================
+  build-gui:
+    name: Build GUI (${{ matrix.os }}/${{ matrix.arch }})
+    needs: test
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            runner: ubuntu-latest
+          - os: darwin
+            arch: amd64
+            runner: macos-13
+          - os: darwin
+            arch: arm64
+            runner: macos-latest
+          - os: windows
+            arch: amd64
+            runner: windows-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install Linux Dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxi-dev \
+            libxxf86vm-dev \
+            libasound2-dev \
+            pkg-config \
+            gcc \
+            g++
+
+      - name: Install macOS Dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew install pkg-config glfw || true
+
+      - name: Install Windows Dependencies
+        if: runner.os == 'Windows'
+        run: |
+          choco install mingw -y
+        shell: pwsh
+
+      - name: Build GUI Binary
+        run: |
+          mkdir -p dist
+          make gui
+          # Rename with platform suffix
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            mv bin/water-gui dist/water-gui-${{ matrix.os }}-${{ matrix.arch }}.exe
+          else
+            mv bin/water-gui dist/water-gui-${{ matrix.os }}-${{ matrix.arch }}
+          fi
+        shell: bash
+        env:
+          VERSION: ${{ needs.test.outputs.version }}
+          CGO_ENABLED: 1
+
+      - name: Upload GUI Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: water-gui-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/*
+          retention-days: 7
+
+  # ============================================================================
+  # JOB 4: CREATE RELEASE
+  # ============================================================================
+  release:
+    name: Create Release
+    needs: [test, build-cli, build-gui]
+    runs-on: ubuntu-latest
+    if: needs.test.outputs.should_release == 'true'
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download CLI Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: water-cli
+          path: dist
+
+      - name: Download GUI Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: water-gui-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate Checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.sha256
+          sha512sum * > checksums.sha512
+          echo "Artifacts:"
+          ls -la
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.test.outputs.version }}
+          name: "Water AI ${{ needs.test.outputs.version }}"
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(needs.test.outputs.version, '-') }}
           files: dist/*
           generate_release_notes: true
+          body: |
+            ## Water AI ${{ needs.test.outputs.version }}
+            
+            ### Downloads
+            
+            | Platform | CLI | GUI |
+            |----------|-----|-----|
+            | Linux (amd64) | water-linux-amd64 | water-gui-linux-amd64 |
+            | macOS (amd64) | water-darwin-amd64 | water-gui-darwin-amd64 |
+            | macOS (arm64) | water-darwin-arm64 | water-gui-darwin-arm64 |
+            | Windows (amd64) | water-windows-amd64.exe | water-gui-windows-amd64.exe |
+            | Linux (arm64) | water-linux-arm64 | - |
+            | Windows (arm64) | water-windows-arm64.exe | - |
+            
+            ### Verification
+            
+            ```bash
+            sha256sum -c checksums.sha256
+            ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================================================
+  # JOB 5: SUMMARY
+  # ============================================================================
+  summary:
+    name: Pipeline Summary
+    needs: [test, build-cli, build-gui, release]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Create Summary
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Test | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| CLI Build | ${{ needs.build-cli.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| GUI Build | ${{ needs.build-gui.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Release | ${{ needs.release.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.test.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
