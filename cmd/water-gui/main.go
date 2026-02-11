@@ -1,9 +1,9 @@
 package main
 
 import (
-	"water-ai/cmd/water-gui/resources"
-	"water-ai/cmd/water-gui/ui"
-	"water-ai/cmd/water-gui/ui/theme"
+	"water-ai/resources"
+	"water-ai/ui"
+	"water-ai/ui/theme"
 
 	"fyne.io/fyne/v2/app"
 )
