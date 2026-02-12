@@ -41,6 +41,8 @@ MODULE     := water-ai
 CMD_PKG    := ./cmd/water
 APP_ID     := ai.water.app
 APP_ICON   := $(CURDIR)/resources/logo-only.png
+ASSET_DIR  := $(CURDIR)/resources
+ASSET_FILES := logo.png logo-only.png vscode.png
 
 # --- Version info (injected via ldflags) -------------------------------------
 VERSION    ?= v0.2.0
@@ -381,7 +383,13 @@ endif
 # ------------------------------------------------------------------------------
 release-linux: deps-linux-static
 	@echo "--> Building Linux release .run self-extracting installers..."
-	@test -f $(APP_ICON) || { echo "ERROR: Icon file not found: $(APP_ICON)"; exit 1; }
+	@echo "    Validating all required assets..."
+	@for asset in $(ASSET_FILES); do \
+		test -f "$(ASSET_DIR)/$$asset" || { echo "ERROR: Asset file not found: $(ASSET_DIR)/$$asset"; exit 1; }; \
+		echo "      ✓ $$asset"; \
+	done
+	@test -f scripts/water-launcher.sh || { echo "ERROR: Launcher script not found: scripts/water-launcher.sh"; exit 1; }
+	@test -f scripts/linux-install.sh || { echo "ERROR: Install script not found: scripts/linux-install.sh"; exit 1; }
 	@mkdir -p $(DIST_DIR)
 	@echo "    Building amd64 binary..."
 	@CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
@@ -401,10 +409,16 @@ release-linux: deps-linux-static
 _bundle-linux-mesa:
 	$(eval BUNDLE_DIR := $(DIST_DIR)/$(BINARY)-linux-$(ARCH))
 	$(eval MULTIARCH := $(shell dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null))
-	@mkdir -p $(BUNDLE_DIR)/bin $(BUNDLE_DIR)/lib/dri
-	@# Validate icon file exists
-	@test -f $(APP_ICON) || { echo "ERROR: Icon file not found: $(APP_ICON)"; exit 1; }
-	@# Copy the binary into the bundle
+	@mkdir -p $(BUNDLE_DIR)/bin $(BUNDLE_DIR)/lib/dri $(BUNDLE_DIR)/assets
+	@# ---- Validate ALL asset files exist before proceeding ----
+	@echo "    Validating asset files..."
+	@for asset in $(ASSET_FILES); do \
+		test -f "$(ASSET_DIR)/$$asset" || { echo "ERROR: Asset file not found: $(ASSET_DIR)/$$asset"; exit 1; }; \
+		echo "      ✓ $$asset"; \
+	done
+	@test -f scripts/water-launcher.sh || { echo "ERROR: Launcher script not found: scripts/water-launcher.sh"; exit 1; }
+	@test -f scripts/linux-install.sh || { echo "ERROR: Install script not found: scripts/linux-install.sh"; exit 1; }
+	@# ---- Copy the binary into the bundle ----
 	@mv $(DIST_DIR)/$(BINARY)-linux-$(ARCH)-bin $(BUNDLE_DIR)/bin/$(BINARY)
 	@# Copy the icon into the bundle
 	@cp $(APP_ICON) $(BUNDLE_DIR)/icon.png
@@ -444,7 +458,7 @@ _bundle-linux-mesa:
 			echo "      WARN: $$lib not found on system (searched: $$SEARCH_PATHS)"; \
 		fi; \
 	done
-	@# Bundle the swrast/llvmpipe DRI driver
+	@# ---- Bundle the swrast/llvmpipe DRI driver ----
 	@CANDIDATE_PATHS="/usr/lib /usr/lib64 /usr/lib/dri"; \
 	if [ -n "$(MULTIARCH)" ]; then \
 		CANDIDATE_PATHS="$$CANDIDATE_PATHS /usr/lib/$(MULTIARCH) /usr/lib/$(MULTIARCH)/dri"; \
@@ -467,7 +481,16 @@ _bundle-linux-mesa:
 			echo "      WARN: $$drv not found on system (searched: $$SEARCH_PATHS)"; \
 		fi; \
 	done
-	@# Create the .run self-extracting installer via makeself
+	@# ---- Verify bundle contents before creating .run ----
+	@echo "    Verifying bundle contents..."
+	@test -x $(BUNDLE_DIR)/bin/$(BINARY) || { echo "ERROR: Binary not executable in bundle"; exit 1; }
+	@test -x $(BUNDLE_DIR)/$(BINARY) || { echo "ERROR: Launcher not executable in bundle"; exit 1; }
+	@test -x $(BUNDLE_DIR)/install.sh || { echo "ERROR: Install script not executable in bundle"; exit 1; }
+	@for asset in $(ASSET_FILES); do \
+		test -f "$(BUNDLE_DIR)/assets/$$asset" || { echo "ERROR: Asset missing from bundle: $$asset"; exit 1; }; \
+	done
+	@echo "    Bundle contents verified."
+	@# ---- Create the .run self-extracting installer via makeself ----
 	@echo "    Creating self-extracting installer $(BINARY)-linux-$(ARCH).run..."
 	@command -v makeself >/dev/null 2>&1 || { echo "ERROR: makeself is not installed"; exit 1; }
 	@makeself --nox11 $(BUNDLE_DIR) $(DIST_DIR)/$(BINARY)-linux-$(ARCH).run \
