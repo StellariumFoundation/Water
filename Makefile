@@ -395,8 +395,9 @@ release-linux: deps-linux-static
 	@$(MAKE) _bundle-linux-mesa ARCH=arm64
 	@echo "--> Linux release .run installers built (with Mesa software renderer fallback)"
 
-# Internal target: bundle a Linux binary with Mesa software renderer libs
-# and create a .run self-extracting installer via makeself
+# Internal target: bundle a Linux binary with Mesa software renderer libs,
+# icon, desktop entry, and install script; create a .run self-extracting
+# installer via makeself that runs the install script on extraction.
 _bundle-linux-mesa:
 	$(eval BUNDLE_DIR := $(DIST_DIR)/$(BINARY)-linux-$(ARCH))
 	$(eval MULTIARCH := $(shell dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null))
@@ -405,11 +406,13 @@ _bundle-linux-mesa:
 	@test -f $(APP_ICON) || { echo "ERROR: Icon file not found: $(APP_ICON)"; exit 1; }
 	@# Copy the binary into the bundle
 	@mv $(DIST_DIR)/$(BINARY)-linux-$(ARCH)-bin $(BUNDLE_DIR)/bin/$(BINARY)
-	@# Copy the launcher script
-	@cp scripts/water-launcher.sh $(BUNDLE_DIR)/$(BINARY)
-	@chmod +x $(BUNDLE_DIR)/$(BINARY)
 	@# Copy the icon into the bundle
 	@cp $(APP_ICON) $(BUNDLE_DIR)/icon.png
+	@# Copy the desktop entry template into the bundle
+	@cp scripts/water.desktop $(BUNDLE_DIR)/water.desktop
+	@# Copy the install script into the bundle
+	@cp scripts/water-install.sh $(BUNDLE_DIR)/install.sh
+	@chmod +x $(BUNDLE_DIR)/install.sh
 	@# Bundle Mesa software rendering libraries
 	@echo "    Copying Mesa software renderer libraries (multiarch=$(MULTIARCH))..."
 	@CANDIDATE_PATHS="/usr/lib /usr/lib64"; \
@@ -468,7 +471,7 @@ _bundle-linux-mesa:
 	@echo "    Creating self-extracting installer $(BINARY)-linux-$(ARCH).run..."
 	@command -v makeself >/dev/null 2>&1 || { echo "ERROR: makeself is not installed"; exit 1; }
 	@makeself --nox11 $(BUNDLE_DIR) $(DIST_DIR)/$(BINARY)-linux-$(ARCH).run \
-		"$(BINARY) Installer" ./$(BINARY) "$@"
+		"$(BINARY) Installer" ./install.sh
 	@rm -rf $(BUNDLE_DIR)
 	@echo "    $(DIST_DIR)/$(BINARY)-linux-$(ARCH).run"
 
