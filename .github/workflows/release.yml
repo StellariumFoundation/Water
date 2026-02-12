@@ -135,7 +135,15 @@ jobs:
             libasound2-dev \
             libgl-dev libx11-xcb-dev libxkbcommon-dev \
             libwayland-dev libvulkan-dev \
-            libgl1-mesa-dri mesa-utils libosmesa6
+            libgl1-mesa-dri mesa-utils \
+            libgl1 libglx-mesa0 libglvnd0 libegl1 libgles2 \
+            libosmesa6 || true
+          # Verify Mesa libraries are available for bundling
+          echo "=== Mesa library check ==="
+          for lib in libGL.so.1 libGLX.so.0 libGLdispatch.so.0 libEGL.so.1 libGLESv2.so.2; do
+            find /usr/lib /usr/lib64 /usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo "unknown") \
+              -name "${lib}*" -type f -o -name "${lib}*" -type l 2>/dev/null | head -3 || true
+          done
 
       # --- macOS: install fyne CLI for .app bundling ---
       - name: Install fyne CLI (macOS)
