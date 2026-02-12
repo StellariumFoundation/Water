@@ -404,8 +404,8 @@ release-linux: deps-linux-static
 	@echo "--> Linux release .run installers built (with Mesa software renderer fallback)"
 
 # Internal target: bundle a Linux binary with Mesa software renderer libs,
-# all icons/assets, and an install script, then create a .run self-extracting
-# installer via makeself.
+# icon, desktop entry, and install script; create a .run self-extracting
+# installer via makeself that runs the install script on extraction.
 _bundle-linux-mesa:
 	$(eval BUNDLE_DIR := $(DIST_DIR)/$(BINARY)-linux-$(ARCH))
 	$(eval MULTIARCH := $(shell dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null))
@@ -420,19 +420,14 @@ _bundle-linux-mesa:
 	@test -f scripts/linux-install.sh || { echo "ERROR: Install script not found: scripts/linux-install.sh"; exit 1; }
 	@# ---- Copy the binary into the bundle ----
 	@mv $(DIST_DIR)/$(BINARY)-linux-$(ARCH)-bin $(BUNDLE_DIR)/bin/$(BINARY)
-	@# ---- Copy the launcher script ----
-	@cp scripts/water-launcher.sh $(BUNDLE_DIR)/$(BINARY)
-	@chmod +x $(BUNDLE_DIR)/$(BINARY)
-	@# ---- Copy the install script ----
-	@cp scripts/linux-install.sh $(BUNDLE_DIR)/install.sh
+	@# Copy the icon into the bundle
+	@cp $(APP_ICON) $(BUNDLE_DIR)/icon.png
+	@# Copy the desktop entry template into the bundle
+	@cp scripts/water.desktop $(BUNDLE_DIR)/water.desktop
+	@# Copy the install script into the bundle
+	@cp scripts/water-install.sh $(BUNDLE_DIR)/install.sh
 	@chmod +x $(BUNDLE_DIR)/install.sh
-	@# ---- Copy ALL asset/icon files into the bundle ----
-	@echo "    Bundling assets..."
-	@for asset in $(ASSET_FILES); do \
-		cp "$(ASSET_DIR)/$$asset" "$(BUNDLE_DIR)/assets/$$asset"; \
-		echo "      Bundled $$asset"; \
-	done
-	@# ---- Bundle Mesa software rendering libraries ----
+	@# Bundle Mesa software rendering libraries
 	@echo "    Copying Mesa software renderer libraries (multiarch=$(MULTIARCH))..."
 	@CANDIDATE_PATHS="/usr/lib /usr/lib64"; \
 	if [ -n "$(MULTIARCH)" ]; then \
