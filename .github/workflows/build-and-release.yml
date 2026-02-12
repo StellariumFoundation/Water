@@ -1,99 +1,283 @@
+# ==============================================================================
+# WATER AI — CI/CD PIPELINE (Unified Binary)
+# ==============================================================================
+#
+# Builds a SINGLE binary per platform that includes both the gateway/backend
+# and the Fyne GUI.  CGO_ENABLED=1 is required for Fyne, so GUI builds run
+# on platform-specific runners.
+#
+# Jobs:
+#   1. test    — lint, vet, tests (race + coverage)
+#   2. build   — build unified binary per platform (native CGO)
+#   3. release — create GitHub release with all artifacts
+#
+# ==============================================================================
+
 name: Build and Release
 
 on:
   push:
-    branches:
-      - master
-      - main
-      - development
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
+    branches: [master, main, development, gui]
+    paths-ignore: ['**.md', 'docs/**', '.gitignore', 'LICENSE']
   pull_request:
-    branches:
-      - master
-      - main
+    branches: [master, main]
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create a release'
+        required: false
+        default: 'false'
+        type: boolean
+      version:
+        description: 'Version override (e.g., v1.0.0)'
+        required: false
+        type: string
 
 permissions:
-  contents: write # REQUIRED: to create tags and releases
+  contents: write
+  security-events: write
 
+env:
+  GO_VERSION: '1.24'
+
+# ==============================================================================
 jobs:
-  build-and-release:
+
+  # ============================================================================
+  # JOB 1: TEST & QUALITY
+  # ============================================================================
+  test:
+    name: Test & Quality
     runs-on: ubuntu-latest
-    
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      should_release: ${{ steps.version.outputs.should_release }}
+
     steps:
-      # ========================================================================
-      # 1. SETUP & DEPENDENCIES
-      # ========================================================================
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+
+          go-version: '1.26'
           cache: true
 
-      - name: Setup Node.js (for Frontend)
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'yarn'
-          cache-dependency-path: frontend/yarn.lock
-
-      # ========================================================================
-      # 2. VERSION CHECK (FROM MAKEFILE)
-      # ========================================================================
-      - name: Extract Version from Makefile
-        id: get_version
+      - name: Install Fyne system dependencies
         run: |
-          VER=$(grep "^VERSION" Makefile | head -n 1 | sed 's/VERSION.*=[[:space:]]*//g')
-          if [ -z "$VER" ]; then
-            echo "Error: Could not extract VERSION from Makefile"
-            exit 1
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl1-mesa-dev libglu1-mesa-dev \
+            libx11-dev libxcursor-dev libxrandr-dev \
+            libxinerama-dev libxi-dev libxxf86vm-dev \
+            libasound2-dev pkg-config gcc g++
+
+      - name: Extract Version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "v0.1.0-dev")
           fi
-          echo "Found version: $VER"
-          echo "version=$VER" >> $GITHUB_OUTPUT
 
-      - name: Check if Tag Exists
-        id: check_tag
-        uses: mukunku/tag-exists-action@v1.6.0
-        with: 
-          tag: ${{ steps.get_version.outputs.version }}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      # ========================================================================
-      # 3. TEST & BUILD
-      # ========================================================================
-      - name: Create Mock Assets
-        run: make mocks
+          SHOULD_RELEASE="false"
+          if [[ "${{ github.event.inputs.create_release }}" == "true" ]]; then
+            SHOULD_RELEASE="true"
+          elif [[ "${{ github.ref }}" == "refs/heads/master" || "${{ github.ref }}" == "refs/heads/main" ]]; then
+            if ! git rev-parse "refs/tags/$VERSION" >/dev/null 2>&1; then
+              SHOULD_RELEASE="true"
+            fi
+          fi
+          echo "should_release=$SHOULD_RELEASE" >> $GITHUB_OUTPUT
 
-      - name: Run Tests
+      - name: Lint & Vet
         run: |
-          go vet ./...
-          go test ./... -count=1
+          make mocks
+          make fmt
+          make vet
+          make lint
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
 
-      - name: Build Optimized Binaries
-        run: |
-          make clean
-          make release
-        # 'make clean' ensures previous artifacts don't block fresh embedding
+      - name: Test (race + coverage)
+        run: make test
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
 
-      # ========================================================================
-      # 4. PUBLISH RELEASE
-      # ========================================================================
-      - name: Create Release
-        if: |
-          (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main') && 
-          steps.check_tag.outputs.exists == 'false'
-        uses: softprops/action-gh-release@v1
+      - name: Upload Coverage
+        uses: codecov/codecov-action@v4
         with:
-          tag_name: ${{ steps.get_version.outputs.version }}
-          name: "Water AI ${{ steps.get_version.outputs.version }}"
+          files: coverage/coverage.out
+          fail_ci_if_error: false
+
+  # ============================================================================
+  # JOB 2: BUILD (platform-specific, CGO_ENABLED=1 for Fyne)
+  # ============================================================================
+  build:
+    name: Build (${{ matrix.os }}/${{ matrix.arch }})
+    needs: test
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+            runner: ubuntu-latest
+          - os: darwin
+            arch: amd64
+            runner: macos-13
+          - os: darwin
+            arch: arm64
+            runner: macos-latest
+          - os: windows
+            arch: amd64
+            runner: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install Linux Dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl1-mesa-dev libglu1-mesa-dev \
+            libx11-dev libxcursor-dev libxrandr-dev \
+            libxinerama-dev libxi-dev libxxf86vm-dev \
+            libasound2-dev pkg-config gcc g++
+
+      - name: Install macOS Dependencies
+        if: runner.os == 'macOS'
+        run: brew install pkg-config glfw || true
+
+      - name: Install Windows Dependencies
+        if: runner.os == 'Windows'
+        run: choco install mingw -y
+        shell: pwsh
+
+      - name: Build unified binary
+        run: |
+          mkdir -p dist
+          make build
+          EXT=""
+          if [ "${{ matrix.os }}" = "windows" ]; then EXT=".exe"; fi
+          mv bin/water dist/water-${{ matrix.os }}-${{ matrix.arch }}${EXT}
+        shell: bash
+        env:
+          VERSION: ${{ needs.test.outputs.version }}
+          CGO_ENABLED: 1
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: water-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/*
+          retention-days: 7
+
+  # ============================================================================
+  # JOB 3: CREATE RELEASE
+  # ============================================================================
+  release:
+    name: Create Release
+    needs: [test, build]
+    runs-on: ubuntu-latest
+    if: needs.test.outputs.should_release == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: water-*
+          path: dist
+          merge-multiple: true
+
+      - name: Generate Checksums
+
+        run: |
+          cd dist
+          sha256sum * > checksums.sha256
+          echo "Artifacts:" && ls -la
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.test.outputs.version }}
+          name: "Water AI ${{ needs.test.outputs.version }}"
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(needs.test.outputs.version, '-') }}
           files: dist/*
           generate_release_notes: true
+          body: |
+            ## Water AI ${{ needs.test.outputs.version }}
+
+            **Single unified binary** — starts both the gateway/backend and the Fyne GUI.
+
+            ### Downloads
+
+            | Platform | Binary |
+            |----------|--------|
+            | Linux (amd64) | `water-linux-amd64` |
+            | macOS (amd64) | `water-darwin-amd64` |
+            | macOS (arm64) | `water-darwin-arm64` |
+            | Windows (amd64) | `water-windows-amd64.exe` |
+
+            ### Usage
+
+            ```bash
+            # Launch GUI + gateway (default)
+            ./water-linux-amd64
+
+            # Headless gateway only
+            ./water-linux-amd64 server
+
+            # Print version
+            ./water-linux-amd64 --version
+            ```
+
+            ### Verification
+
+            ```bash
+            sha256sum -c checksums.sha256
+            ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================================================
+  # JOB 4: SUMMARY
+  # ============================================================================
+  summary:
+    name: Pipeline Summary
+    needs: [test, build, release]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: Summary
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Test | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Release | ${{ needs.release.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ needs.test.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

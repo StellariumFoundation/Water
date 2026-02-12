@@ -200,4 +200,5 @@ data/logs
 data/events.db
 output/
 bin/
+coverage/
 .vscode/

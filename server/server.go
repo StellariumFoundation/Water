@@ -16,8 +16,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-
-	"water-ai/cmd/water/embed"
 )
 
 // --- Configuration & Global State ---
@@ -467,21 +465,9 @@ func CreateServer(config Config) *Server {
 	})
 
 	// Frontend Static Files (SPA fallback for client-side routing)
+	// Note: The Fyne GUI connects directly via WebSocket, no web frontend needed
 	router.NoRoute(func(c *gin.Context) {
-		path := c.Request.URL.Path
-		// Check if the path exists as a static file
-		content, err := embed.Frontend.ReadFile("out" + path)
-		if err == nil {
-			c.Data(http.StatusOK, getContentType(path), content)
-			return
-		}
-		// For SPA routes, serve index.html
-		indexContent, err := embed.Frontend.ReadFile("out/index.html")
-		if err == nil {
-			c.Data(http.StatusOK, "text/html; charset=utf-8", indexContent)
-		} else {
-			c.String(http.StatusNotFound, "Frontend not embedded. Build with: make build-frontend")
-		}
+		c.String(http.StatusNotFound, "Water AI Backend API - Use the Fyne GUI client to connect")
 	})
 
 	return srv

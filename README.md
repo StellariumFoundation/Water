@@ -66,7 +66,34 @@ Water/
 
 ### Prerequisites
 *   [Go 1.24+](https://golang.org/dl/)
-*   [Node.js 20+](https://nodejs.org/) and [Yarn](https://yarnpkg.com/) (only for frontend builds)
+
+*   GCC / Clang (CGO is required for the Fyne GUI)
+*   Linux: `libgl1-mesa-dev`, `libxcursor-dev`, `libxrandr-dev`, `libxinerama-dev`, `libxi-dev`, `libxxf86vm-dev`
+*   macOS: Xcode Command Line Tools
+*   Windows: MinGW-w64
+
+### Installation
+1.  **Clone the Repository**
+    ```bash
+    git clone https://github.com/StellariumFoundation/Water.git
+    cd Water
+    ```
+
+2.  **Build & Run**
+    ```bash
+    make build
+    ./bin/water          # Launches the gateway + Fyne GUI
+    ./bin/water server   # Headless gateway only
+    ./bin/water --version
+    ```
+    *A single binary starts both the backend gateway (port 7777) and the Fyne desktop GUI.*
+
+3.  **Release builds for all platforms**
+    ```bash
+    make release         # Outputs to dist/
+    ```
+
+
 
 ### Quick Start (Development)
 

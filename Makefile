@@ -1,117 +1,230 @@
 # ==============================================================================
-# WATER AI - BUILD CONFIGURATION
+# WATER AI — UNIFIED BUILD SYSTEM
+# ==============================================================================
+#
+# Produces a SINGLE binary that starts both the gateway/backend service AND
+# the Fyne GUI.  CGO_ENABLED=1 is required for Fyne.
+#
+# Usage:
+#   make build              — Build for current platform
+#   make build-linux        — Cross-compile for linux/amd64
+#   make build-darwin       — Cross-compile for darwin/amd64
+#   make build-windows      — Cross-compile for windows/amd64
+#   make test               — Run tests with race detection + coverage
+#   make release            — Build optimised binaries for all release targets
+#   make compress           — UPX-compress binaries in dist/ (optional)
+#   make clean              — Remove build artifacts
+#   make help               — Show this help
+#
+# Cross-compilation notes (Fyne / CGO):
+#   Linux  → needs gcc, pkg-config, libgl1-mesa-dev, libxcursor-dev, etc.
+#   macOS  → needs Xcode Command Line Tools (native) or osxcross (cross)
+#   Windows→ needs x86_64-w64-mingw32-gcc (MinGW-w64)
+#
 # ==============================================================================
 
-BINARY_NAME := water-ai
-VERSION     := v0.1.1
+# --- Shell -------------------------------------------------------------------
+SHELL      := /bin/bash
+.SHELLFLAGS := -euo pipefail -c
 
-# Directories
+# --- Project -----------------------------------------------------------------
+BINARY     := water
+MODULE     := water-ai
+CMD_PKG    := ./cmd/water
+
+# --- Version info (injected via ldflags) -------------------------------------
+VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "v0.1.0-dev")
+GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+GO_VERSION := $(shell go version 2>/dev/null | awk '{print $$3}' || echo "unknown")
+
+# --- Directories -------------------------------------------------------------
 DIST_DIR     := dist
 BIN_DIR      := bin
-FRONTEND_DIR := frontend
-EMBED_DIR    := cmd/water/embed/out
+COVERAGE_DIR := coverage
 
-# Go Build Flags
-LDFLAGS  := -s -w -X 'main.Version=$(VERSION)' -extldflags "-static"
-GO_FLAGS := -trimpath -ldflags "$(LDFLAGS)"
+# --- Host detection ----------------------------------------------------------
+UNAME_S := $(shell uname -s 2>/dev/null || echo "Linux")
+UNAME_M := $(shell uname -m 2>/dev/null || echo "x86_64")
 
-# Platforms to build for (OS/ARCH)
-PLATFORMS := linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64
+ifeq ($(UNAME_S),Linux)
+    GOOS_HOST := linux
+else ifeq ($(UNAME_S),Darwin)
+    GOOS_HOST := darwin
+else
+    GOOS_HOST := linux
+endif
 
-# FIX 1: Added 'frontend' here so Make ignores the folder of the same name
-.PHONY: all build build-dev frontend clean release test test-race test-coverage help mocks
+ifeq ($(filter $(UNAME_M),x86_64 amd64),)
+    GOARCH_HOST := arm64
+else
+    GOARCH_HOST := amd64
+endif
 
-# Default target
-all: clean test frontend release
+# --- Build flags (ultra-optimised) -------------------------------------------
+LDFLAGS := -s -w \
+	-X 'main.Version=$(VERSION)' \
+	-X 'main.GitCommit=$(GIT_COMMIT)' \
+	-X 'main.BuildDate=$(BUILD_DATE)' \
+	-X 'main.GoVersion=$(GO_VERSION)'
 
-# Help: List available commands
+GO_BUILD_FLAGS := -trimpath -ldflags "$(LDFLAGS)"
+
+# CGO is required for Fyne
+export CGO_ENABLED := 1
+
+
+# --- Release matrix ----------------------------------------------------------
+RELEASE_TARGETS := linux/amd64 darwin/amd64 darwin/arm64 windows/amd64
+
+# ==============================================================================
+# PHONY
+# ==============================================================================
+.PHONY: all help build build-linux build-darwin build-windows \
+        test test-short test-coverage \
+        release compress checksums \
+        clean clean-all \
+        deps deps-update mocks \
+        fmt vet lint security \
+        version info install run
+
+# --- Default -----------------------------------------------------------------
+all: deps test build
+
+# ==============================================================================
+# HELP
+# ==============================================================================
 help:
-	@echo "Water AI Makefile"
-	@echo "-----------------"
-	@echo "make all           - Clean, test, build frontend, and build release binaries"
-	@echo "make build         - Build binary for current OS (includes frontend)"
-	@echo "make build-dev     - Build Go backend only (no Node.js required)"
-	@echo "make release       - Build optimized binaries for all platforms"
-	@echo "make frontend      - Build Next.js frontend and copy to embed folder"
-	@echo "make test          - Run standard unit tests"
-	@echo "make test-race     - Run tests with race detection"
-	@echo "make test-coverage - Run tests and generate HTML coverage report"
-	@echo "make clean         - Remove build artifacts"
+	@echo "╔══════════════════════════════════════════════════════════════╗"
+	@echo "║              WATER AI — UNIFIED BUILD SYSTEM               ║"
+	@echo "╠══════════════════════════════════════════════════════════════╣"
+	@echo "║  make build            Build for current platform          ║"
+	@echo "║  make build-linux      Cross-compile linux/amd64           ║"
+	@echo "║  make build-darwin     Cross-compile darwin/amd64          ║"
+	@echo "║  make build-windows    Cross-compile windows/amd64         ║"
+	@echo "║  make test             Tests + race detection + coverage   ║"
+	@echo "║  make test-short       Quick tests (no race)               ║"
+	@echo "║  make release          Optimised builds for all platforms  ║"
+	@echo "║  make compress         UPX-compress dist/ binaries         ║"
+	@echo "║  make clean            Remove build artifacts              ║"
+	@echo "║  make deps             Download Go dependencies            ║"
+	@echo "║  make deps-update      Update all dependencies             ║"
+	@echo "║  make lint             Run golangci-lint                   ║"
+	@echo "║  make version          Print version info                  ║"
+	@echo "║  make info             Full build environment info         ║"
+	@echo "╚══════════════════════════════════════════════════════════════╝"
+
 
 # ==============================================================================
-# TESTING
+# VERSION / INFO
 # ==============================================================================
+version:
+	@echo "Version:    $(VERSION)"
+	@echo "Commit:     $(GIT_COMMIT)"
+	@echo "Build Date: $(BUILD_DATE)"
+	@echo "Go Version: $(GO_VERSION)"
+
+info: version
+	@echo "Host OS:    $(GOOS_HOST)"
+	@echo "Host Arch:  $(GOARCH_HOST)"
+	@echo "CGO:        $(CGO_ENABLED)"
+
+# ==============================================================================
+# DEPENDENCIES
+# ==============================================================================
+deps:
+	@echo "--> Downloading dependencies..."
+	@go mod download
+	@go mod tidy
+	@echo "--> Dependencies ready"
+
+deps-update:
+	@echo "--> Updating dependencies..."
+	@go get -u ./...
+	@go mod tidy
+	@echo "--> Dependencies updated"
 
 mocks:
-	@echo "--> Creating dummy assets for testing..."
-	@mkdir -p cmd/water/embed/out
-	@touch cmd/water/embed/out/.keep
 	@mkdir -p browser/embed
 	@touch browser/embed/OpenSans-Medium.ttf
 	@touch browser/embed/findVisibleInteractiveElements.js
 
-test: mocks
-	@echo "--> Running Go dependencies check..."
-	@go mod tidy
-	@echo "--> Running static analysis (go vet)..."
-	@go vet ./...
-	@echo "--> Running unit tests..."
-	@go test ./... -v -count=1
+# ==============================================================================
+# CODE QUALITY
+# ==============================================================================
+fmt:
+	@go fmt ./...
 
-test-race: mocks
-	@echo "--> Running tests with race detector..."
-	@CGO_ENABLED=1 go test ./... -race -v -count=1
+vet:
+	@go vet ./...
+
+lint:
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run --timeout 5m ./...; \
+	else \
+		echo "WARN: golangci-lint not installed — skipping"; \
+	fi
+
+security:
+	@if command -v govulncheck >/dev/null 2>&1; then \
+		govulncheck ./...; \
+	else \
+		echo "WARN: govulncheck not installed — skipping"; \
+	fi
+
+# ==============================================================================
+# TESTING
+# ==============================================================================
+test: mocks
+	@echo "--> Running tests with race detection and coverage..."
+	@mkdir -p $(COVERAGE_DIR)
+	@CGO_ENABLED=1 go test -race -v -count=1 -timeout $(TEST_TIMEOUT) \
+		-coverprofile=$(COVERAGE_DIR)/coverage.out -covermode=atomic ./...
+	@go tool cover -func=$(COVERAGE_DIR)/coverage.out | tail -n 1
+	@echo "--> Tests passed"
+
+test-short: mocks
+	@echo "--> Running short tests..."
+	@go test -short -v -count=1 -timeout 5m ./...
+	@echo "--> Short tests passed"
 
 test-coverage: mocks
-	@echo "--> Running tests with coverage..."
-	@go test ./... -coverprofile=coverage.out -count=1
-	@if command -v go >/dev/null 2>&1; then \
-		go tool cover -html=coverage.out -o coverage.html; \
-		echo "Coverage report generated: coverage.html"; \
-	else \
-		echo "Coverage report: coverage.out"; \
-	fi
+	@echo "--> Generating coverage report..."
+	@mkdir -p $(COVERAGE_DIR)
+	@go test -coverprofile=$(COVERAGE_DIR)/coverage.out -covermode=atomic -timeout $(TEST_TIMEOUT) ./...
+	@go tool cover -html=$(COVERAGE_DIR)/coverage.out -o $(COVERAGE_DIR)/coverage.html
+	@go tool cover -func=$(COVERAGE_DIR)/coverage.out | tail -n 1
+	@echo "--> Coverage report: $(COVERAGE_DIR)/coverage.html"
 
 # ==============================================================================
-# FRONTEND BUILD
+# BUILD — single unified binary (gateway + GUI)
 # ==============================================================================
-
-frontend:
-	@echo "--> Building Next.js frontend..."
-	
-	@# Safety Check: API routes are incompatible with static export
-	@if [ -d "$(FRONTEND_DIR)/app/api" ]; then \
-		echo "ERROR: Found API routes in $(FRONTEND_DIR)/app/api"; \
-		echo "Next.js 'output: export' does not support API routes. Move logic to Go."; \
-		exit 1; \
-	fi
-
-	@# Install Dependencies
-	@cd $(FRONTEND_DIR) && yarn install --frozen-lockfile --silent
-
-	@# Build Static Export with localhost:7777 as the API/WS target
-	@cd $(FRONTEND_DIR) && \
-		NEXT_TELEMETRY_DISABLED=1 \
-		NEXT_DISABLE_WORKER_THREADS=1 \
-		NEXT_PUBLIC_API_URL=http://localhost:7777 \
-		yarn build
-
-	@# Prepare Embed Directory
-	@echo "--> Embedding assets into Go..."
-	@rm -rf $(EMBED_DIR)
-	@mkdir -p $(EMBED_DIR)
-	@cp -r $(FRONTEND_DIR)/out/. $(EMBED_DIR)/
-	@touch $(EMBED_DIR)/.keep
-
-# ==============================================================================
-# BACKEND BUILD (LOCAL)
-# ==============================================================================
-
-build: frontend
-	@echo "--> Building local binary..."
+build:
+	@echo "--> Building $(BINARY) for $(GOOS_HOST)/$(GOARCH_HOST)..."
 	@mkdir -p $(BIN_DIR)
-	@CGO_ENABLED=0 go build $(GO_FLAGS) -o $(BIN_DIR)/$(BINARY_NAME) ./cmd/water
-	@echo "Done! Run with: ./$(BIN_DIR)/$(BINARY_NAME)"
+	@CGO_ENABLED=1 go build $(GO_BUILD_FLAGS) -o $(BIN_DIR)/$(BINARY) $(CMD_PKG)
+	@echo "--> $(BIN_DIR)/$(BINARY)"
+
+build-linux:
+	@echo "--> Building $(BINARY) for linux/amd64..."
+	@mkdir -p $(BIN_DIR)
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build $(GO_BUILD_FLAGS) \
+		-o $(BIN_DIR)/$(BINARY)-linux-amd64 $(CMD_PKG)
+	@echo "--> $(BIN_DIR)/$(BINARY)-linux-amd64"
+
+build-darwin:
+	@echo "--> Building $(BINARY) for darwin/amd64..."
+	@mkdir -p $(BIN_DIR)
+	@GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build $(GO_BUILD_FLAGS) \
+		-o $(BIN_DIR)/$(BINARY)-darwin-amd64 $(CMD_PKG)
+	@echo "--> $(BIN_DIR)/$(BINARY)-darwin-amd64"
+
+build-windows:
+	@echo "--> Building $(BINARY) for windows/amd64..."
+	@mkdir -p $(BIN_DIR)
+	@GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc \
+		go build $(GO_BUILD_FLAGS) -o $(BIN_DIR)/$(BINARY)-windows-amd64.exe $(CMD_PKG)
+	@echo "--> $(BIN_DIR)/$(BINARY)-windows-amd64.exe"
 
 # Build Go backend only (no Node.js/frontend required)
 build-dev: mocks
@@ -121,34 +234,69 @@ build-dev: mocks
 	@echo "Done! Run with: ./$(BIN_DIR)/$(BINARY_NAME)"
 
 # ==============================================================================
-# RELEASE BUILD (CROSS-PLATFORM)
+# RELEASE — optimised binaries for all platforms → dist/
 # ==============================================================================
-
-release: frontend
-	@echo "--> Building optimized binaries for platforms: $(PLATFORMS)"
+release: clean
+	@echo "╔══════════════════════════════════════════════════════════════╗"
+	@echo "║           BUILDING RELEASE BINARIES                        ║"
+	@echo "╚══════════════════════════════════════════════════════════════╝"
 	@mkdir -p $(DIST_DIR)
-	@for p in $(PLATFORMS); do \
-		os=$$(echo "$$p" | cut -d'/' -f1); \
-		arch=$$(echo "$$p" | cut -d'/' -f2); \
+	@for target in $(RELEASE_TARGETS); do \
+		os=$$(echo "$$target" | cut -d'/' -f1); \
+		arch=$$(echo "$$target" | cut -d'/' -f2); \
 		ext=""; \
 		if [ "$$os" = "windows" ]; then ext=".exe"; fi; \
-		target="$(DIST_DIR)/$(BINARY_NAME)-$$os-$$arch$$ext"; \
-		echo "    Building $$target ..."; \
-		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -a $(GO_FLAGS) -o $$target ./cmd/water; \
+		out="$(DIST_DIR)/$(BINARY)-$$os-$$arch$$ext"; \
+		echo "    Building $$out ..."; \
+		CGO_ENABLED=1 GOOS=$$os GOARCH=$$arch \
+			go build -a $(GO_BUILD_FLAGS) -o $$out $(CMD_PKG) || \
+			{ echo "ERROR: failed to build $$out"; exit 1; }; \
 	done
-	@echo "--> Release builds completed in $(DIST_DIR)/"
+	@$(MAKE) checksums
+	@echo "--> Release builds in $(DIST_DIR)/"
 	@ls -lh $(DIST_DIR)/
 
-# ==============================================================================
-# CLEANUP
-# ==============================================================================
+checksums:
+	@if [ -d "$(DIST_DIR)" ] && [ "$$(ls -A $(DIST_DIR) 2>/dev/null)" ]; then \
+		cd $(DIST_DIR) && sha256sum * > checksums.sha256 2>/dev/null || true; \
+		echo "--> $(DIST_DIR)/checksums.sha256"; \
+	fi
 
+# ==============================================================================
+# COMPRESS (optional — requires UPX)
+# ==============================================================================
+compress:
+	@if command -v upx >/dev/null 2>&1; then \
+		echo "--> Compressing binaries with UPX..."; \
+		for f in $(DIST_DIR)/$(BINARY)-*; do \
+			upx --best --lzma "$$f" 2>/dev/null || true; \
+		done; \
+		echo "--> Compression complete"; \
+	else \
+		echo "WARN: UPX not found — skipping compression"; \
+	fi
+
+# ==============================================================================
+# INSTALL / RUN
+# ==============================================================================
+install: build
+	@echo "--> Installing $(BINARY) to $(GOPATH)/bin/"
+	@mkdir -p $(GOPATH)/bin
+	@cp $(BIN_DIR)/$(BINARY) $(GOPATH)/bin/
+	@echo "--> Installed"
+
+run: build
+	@./$(BIN_DIR)/$(BINARY)
+
+# ==============================================================================
+# CLEAN
+# ==============================================================================
 clean:
-	@echo "--> Cleaning up..."
-	@rm -rf $(DIST_DIR)
-	@rm -rf $(BIN_DIR)
-	@rm -rf $(EMBED_DIR)
-	@rm -rf $(FRONTEND_DIR)/out
-	@rm -rf $(FRONTEND_DIR)/.next
+	@echo "--> Cleaning build artifacts..."
+	@rm -rf $(DIST_DIR) $(BIN_DIR) $(COVERAGE_DIR)
 	@rm -f coverage.out coverage.html
-	@echo "Clean complete."
+	@echo "--> Clean"
+
+clean-all: clean
+	@go clean -cache -testcache -modcache -i -r 2>/dev/null || true
+	@echo "--> Deep clean complete"
