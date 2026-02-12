@@ -2,8 +2,13 @@
 # WATER AI — CI + RELEASE PIPELINE
 # ==============================================================================
 #
-# Runs all tests, then builds native binaries on each platform runner and
-# collects them into a single GitHub Release using the VERSION from the Makefile.
+# Runs all tests, then builds self-contained binaries on each platform runner
+# and collects them into a single GitHub Release using the VERSION from the
+# Makefile.
+#
+# Linux:   statically linked binaries (no runtime dependencies)
+# macOS:   .app bundles via fyne package (zipped for release)
+# Windows: .exe with embedded manifest/icon via fyne package
 #
 # ==============================================================================
 
@@ -67,7 +72,7 @@ jobs:
         run: make test
 
   # ==============================================================================
-  # JOB 2 — Build native binaries on each platform
+  # JOB 2 — Build self-contained binaries on each platform
   # ==============================================================================
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
@@ -76,30 +81,33 @@ jobs:
     strategy:
       matrix:
         include:
+          # --- Linux: statically linked binaries ---
           - goos: linux
             goarch: amd64
             runner: ubuntu-latest
-            binary: Water-linux-amd64
+            artifact: Water-linux-amd64
           - goos: linux
             goarch: arm64
             runner: ubuntu-24.04-arm
-            binary: Water-linux-arm64
+            artifact: Water-linux-arm64
+          # --- macOS: .app bundles (zipped) ---
           - goos: darwin
             goarch: amd64
             runner: macos-latest
-            binary: Water-darwin-amd64
+            artifact: Water-darwin-amd64.zip
           - goos: darwin
             goarch: arm64
             runner: macos-latest
-            binary: Water-darwin-arm64
+            artifact: Water-darwin-arm64.zip
+          # --- Windows: .exe with embedded manifest/icon ---
           - goos: windows
             goarch: amd64
             runner: windows-latest
-            binary: Water-windows-amd64.exe
+            artifact: Water-windows-amd64.exe
           - goos: windows
             goarch: arm64
             runner: windows-11-arm
-            binary: Water-windows-arm64.exe
+            artifact: Water-windows-arm64.exe
     runs-on: ${{ matrix.runner }}
 
     steps:
@@ -114,7 +122,8 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: Install Linux dependencies
+      # --- Linux: install static linking dependencies ---
+      - name: Install Linux dependencies (static)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
@@ -122,8 +131,16 @@ jobs:
             libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
             libx11-dev libxcursor-dev libxrandr-dev \
             libxinerama-dev libxi-dev libxxf86vm-dev \
-            libasound2-dev
+            libasound2-dev \
+            libgl-dev libx11-xcb-dev libxkbcommon-dev \
+            libwayland-dev libvulkan-dev
 
+      # --- macOS: install fyne CLI for .app bundling ---
+      - name: Install fyne CLI (macOS)
+        if: runner.os == 'macOS'
+        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+
+      # --- Windows: install MSYS2 + fyne CLI ---
       - name: Install Windows amd64 dependencies
         if: runner.os == 'Windows' && matrix.goarch == 'amd64'
         uses: msys2/setup-msys2@v2
@@ -140,6 +157,12 @@ jobs:
           update: true
           install: mingw-w64-clang-aarch64-gcc pkg-config
 
+      - name: Install fyne CLI (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+
+      # --- Build release binary/bundle ---
       - name: Build release binary
         shell: bash
         env:
