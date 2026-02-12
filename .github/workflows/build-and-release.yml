@@ -3,13 +3,11 @@
 # ==============================================================================
 #
 # Builds a SINGLE binary per platform that includes both the gateway/backend
-# and the Fyne GUI.  CGO_ENABLED=1 is required for Fyne, so GUI builds run
-# on platform-specific runners.
+# and the Fyne GUI. Uses make release for cross-platform builds.
 #
 # Jobs:
 #   1. test    — lint, vet, tests (race + coverage)
-#   2. build   — build unified binary per platform (native CGO)
-#   3. release — create GitHub release with all artifacts
+#   2. release — cross-compile all platforms and create GitHub release
 #
 # ==============================================================================
 
@@ -38,7 +36,7 @@ permissions:
   security-events: write
 
 env:
-  GO_VERSION: '1.24'
+  GO_VERSION: '1.26'
 
 # ==============================================================================
 jobs:
@@ -62,7 +60,6 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-
           go-version: '1.26'
           cache: true
 
@@ -117,28 +114,13 @@ jobs:
           fail_ci_if_error: false
 
   # ============================================================================
-  # JOB 2: BUILD (platform-specific, CGO_ENABLED=1 for Fyne)
+  # JOB 2: RELEASE (cross-compile all platforms using make release)
   # ============================================================================
-  build:
-    name: Build (${{ matrix.os }}/${{ matrix.arch }})
+  release:
+    name: Release
     needs: test
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: linux
-            arch: amd64
-            runner: ubuntu-latest
-          - os: darwin
-            arch: amd64
-            runner: macos-13
-          - os: darwin
-            arch: arm64
-            runner: macos-latest
-          - os: windows
-            arch: amd64
-            runner: windows-latest
+    runs-on: ubuntu-latest
+    if: needs.test.outputs.should_release == 'true'
 
     steps:
       - name: Checkout
@@ -147,69 +129,31 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: ${{ env.GO_VERSION }}
+          go-version: '1.26'
           cache: true
 
-      - name: Install Linux Dependencies
-        if: runner.os == 'Linux'
+      - name: Install Fyne system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libgl1-mesa-dev libglu1-mesa-dev \
             libx11-dev libxcursor-dev libxrandr-dev \
             libxinerama-dev libxi-dev libxxf86vm-dev \
-            libasound2-dev pkg-config gcc g++
+            libasound2-dev pkg-config gcc g++ mingw-w64
 
-      - name: Install macOS Dependencies
-        if: runner.os == 'macOS'
-        run: brew install pkg-config glfw || true
-
-      - name: Install Windows Dependencies
-        if: runner.os == 'Windows'
-        run: choco install mingw -y
-        shell: pwsh
-
-      - name: Build unified binary
-        run: |
-          mkdir -p dist
-          make build
-          EXT=""
-          if [ "${{ matrix.os }}" = "windows" ]; then EXT=".exe"; fi
-          mv bin/water dist/water-${{ matrix.os }}-${{ matrix.arch }}${EXT}
-        shell: bash
+      - name: Build all platforms
+        run: make release
         env:
           VERSION: ${{ needs.test.outputs.version }}
-          CGO_ENABLED: 1
 
-      - name: Upload Artifact
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: water-${{ matrix.os }}-${{ matrix.arch }}
+          name: water-release
           path: dist/*
           retention-days: 7
 
-  # ============================================================================
-  # JOB 3: CREATE RELEASE
-  # ============================================================================
-  release:
-    name: Create Release
-    needs: [test, build]
-    runs-on: ubuntu-latest
-    if: needs.test.outputs.should_release == 'true'
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download All Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: water-*
-          path: dist
-          merge-multiple: true
-
       - name: Generate Checksums
-
         run: |
           cd dist
           sha256sum * > checksums.sha256
@@ -258,26 +202,3 @@ jobs:
             ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # ============================================================================
-  # JOB 4: SUMMARY
-  # ============================================================================
-  summary:
-    name: Pipeline Summary
-    needs: [test, build, release]
-    runs-on: ubuntu-latest
-    if: always()
-
-    steps:
-      - name: Summary
-        run: |
-          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Test | ${{ needs.test.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Build | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Release | ${{ needs.release.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** ${{ needs.test.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
