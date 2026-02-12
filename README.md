@@ -2,7 +2,7 @@
   <img src="resources/logo.png" alt="Water AI Logo" width="200"/>
 </p>
 
-<h1 align="center">🌊 Water AI: An AI Supermodel</h1>
+<h1 align="center">🌊 Water AI: The AI Supermodel</h1>
 
 <p align="center">
   <em>"You put water into a cup, it becomes the cup. You put water into a bottle, it becomes the bottle. Be water, my friend."</em> — <strong>Bruce Lee</strong>
@@ -17,19 +17,43 @@
 
 ---
 
-## 📖 Overview
+## 📖 Overview & Vision
 
-**Water AI** is the intelligent core of the Water ecosystem — the most ambitious project in the Stellarium suite. Conceived by **John Victor**, it is designed not merely as a tool, but as a practical and accessible form of **Artificial General Intelligence (AGI)** that serves as a universal force-multiplier for human potential. It is a gift to humanity and a cornerstone technology for achieving the **"Elevation to Eden."**
+**Water AI** is the intelligent core of the Water ecosystem — a unified **AI Supermodel** designed to aggregate the world's best specialized AI capabilities into a single, accessible platform. Conceived by **John Victor** of the **Stellarium Foundation**, it is envisioned as a practical and accessible form of **Artificial General Intelligence (AGI)** and a gift to humanity.
 
-Water AI is an **AI Supermodel** that intelligently aggregates the world's best specialized AI capabilities and action-taking prowess into a single, accessible platform. It understands complex requests, routes them to state-of-the-art specialized AI models (finance, law, engineering, creative arts, and more), and then **acts** — drafting contracts, generating 3D designs, composing strategies, coding software, and launching campaigns.
+Water AI serves as the **brain of the ecosystem** — a universal force-multiplier for human potential and a cornerstone technology for achieving the **"Elevation to Eden."** It understands complex requests, routes them to state-of-the-art specialized AI models (finance, law, engineering, creative arts, and more), and then **acts** — drafting contracts, generating 3D designs, composing strategies, coding software, and launching campaigns.
+
+> Water AI is not merely a tool — it is a platform that augments every human being with the combined intelligence of the world's best AI systems.
 
 ---
 
-## 💎 Vision: Augmenting Humanity
+## 🔍 The Problem: Fragmentation of AI & Untapped Human Potential
 
-**The Problem:** The AI revolution is here, yet its power remains fragmented. Users navigate a complex ecosystem of specialized tools, while general AI models lack deep expertise in every domain. This limits true human augmentation.
+The AI revolution is here, yet its power remains **fragmented**. Users must navigate a complex ecosystem of specialized tools — one for writing, another for coding, yet another for research, and still more for creative work. General-purpose AI models lack deep expertise in every domain, while specialized models remain siloed and inaccessible to most people.
 
-**The Solution:** Water AI solves this by acting as the **Master Orchestrator**. It provides a single, fluid interface that understands complex intent, decomposes tasks, routes them to the best-in-class specialized models, and performs actual digital labor — all while maintaining context and enabling human-AI collaboration.
+This fragmentation creates barriers:
+- **Knowledge workers** waste time switching between tools and manually synthesizing outputs
+- **Professionals** in law, finance, and healthcare lack AI that truly understands their domain
+- **Creatives** cannot seamlessly move from ideation to execution within a single workflow
+- **Students and researchers** struggle to access the best AI capabilities for their specific needs
+- **The general public** is locked out of advanced AI by complexity and cost
+
+The result: **humanity's potential remains untapped**, limited by the tools available rather than the ambition of the user.
+
+---
+
+## 💡 The Solution: A Unified AI Supermodel
+
+Water AI solves this by acting as the **Master Orchestrator**. It provides a single, fluid interface that:
+
+1. **Understands** complex, multi-domain intent through natural language
+2. **Decomposes** tasks into actionable sub-tasks
+3. **Routes** each sub-task to the best-in-class specialized AI model
+4. **Executes** actual digital labor — creating documents, writing code, browsing the web, manipulating data
+5. **Synthesizes** results into coherent, high-quality outputs
+6. **Iterates** based on user feedback, maintaining full context throughout
+
+Water AI intelligently routes requests to specialized models across finance, law, engineering, creative arts, and more — then **acts on them**, performing real work rather than just generating text.
 
 ---
 
@@ -37,56 +61,69 @@ Water AI is an **AI Supermodel** that intelligently aggregates the world's best 
 
 | Differentiator | Description |
 |---|---|
-| **Best-of-Kind Specialization** | Dynamically leverages a curated ecosystem of the world's leading specialized AIs across finance, law, engineering, creative arts, and more. |
-| **True Action & Labor Performing** | Goes beyond text generation — creates, builds, and executes across digital tasks including document creation, code generation, web interaction, and data manipulation. |
-| **Open, Accessible & Client-Run** | Open-source core components with the ability to run on client devices via WebAssembly for data sovereignty and privacy. |
-| **Intelligent Orchestration** | Sophisticated Go-based AI core for planning, tool selection, task decomposition, multi-model routing, and human-AI collaboration. |
-| **Formless & Persistent** | Runs as a background daemon on your OS, accessible via a native desktop GUI, web interface, or remote bridges. |
+| **Best-of-Kind Specialization** | Dynamically leverages a curated ecosystem of the world's leading specialized AIs. Rather than one model trying to do everything, Water AI routes each task to the model that does it best — creating a dynamic ecosystem that evolves as new models emerge. |
+| **True Action & Labor Performing** | Goes beyond text generation — creates, builds, and executes across digital tasks including document creation, code generation, web interaction, data manipulation, and creative media generation. |
+| **Open, Accessible & Potentially Client-Run** | Open-source core components with the ability to run on client devices via WebAssembly for data sovereignty and privacy. Designed to be accessible to everyone, not just enterprises. |
+| **Intelligent Orchestration** | Sophisticated Go-based AI core that plans multi-step workflows, selects the right tools and models, seeks clarification when needed, and maintains context across complex interactions. |
+| **Formless & Persistent** | Runs as a background daemon on your OS, accessible via a native desktop GUI, web interface, or remote bridges — always ready, always adapting. |
 
 ---
 
 ## 🎯 Target Users
 
-- **Professionals** — Legal, Finance, Healthcare, Engineering, Business
-- **Creatives** — Designers, Writers, Artists, Developers
-- **Researchers & Academics** — Deep research, fact-checking, data analysis
-- **Students & Lifelong Learners** — Learning augmentation and knowledge synthesis
-- **General Knowledge Workers & Individuals** — Everyday productivity and task automation
+- **Professionals** — Legal, Finance, Healthcare, Engineering, Business strategists who need domain-expert AI
+- **Creatives** — Designers, Writers, Artists, Developers who need seamless ideation-to-execution workflows
+- **Researchers & Academics** — Deep research, fact-checking, data analysis, and knowledge synthesis
+- **Students & Lifelong Learners** — Learning augmentation, tutoring, and knowledge exploration
+- **General Knowledge Workers & Individuals** — Everyday productivity, task automation, and personal AI assistance
 
 ---
 
-## ✨ Features
+## ✨ Product Features
 
-### Intuitive Multi-Modal Interface
-- Chat interface supporting text, file uploads, and voice input
-- Downloadable native desktop client (Windows, macOS, Linux) built with [Fyne](https://fyne.io/)
-- Web access via embedded frontend
+### 🖥 Intuitive Multi-Modal Interface
+- Chat interface supporting **text, file uploads, and voice input**
+- **Downloadable native desktop client** (Windows, macOS, Linux) built with [Fyne](https://fyne.io/)
+- **Web access** via embedded frontend
 - Multi-format output with user control and iteration
+- Browser, code, and terminal panels for real-time visualization of AI actions
 
-### Intelligent Orchestration Engine
+### 🧠 Intelligent Prompt Processing & Orchestration Engine
 - Intent understanding and task decomposition
 - Multi-model routing to specialized AIs
-- Context management with token-aware windowing
+- Context management with token-aware windowing and conversation summarization
 - Response synthesis across multiple model outputs
 - Sequential thinking and planning modules
+- Quality assurance via reviewer agent
+- Slash commands for quick actions (`/help`, `/compact`)
 
-### Specialized AI Model Ecosystem
-- Curated models from Hugging Face, open-source, and commercial sources
-- Multi-provider LLM support (OpenAI, Anthropic, Google Gemini)
+### 🤖 Specialized AI Model Ecosystem
+- Curated models from **Hugging Face, open-source, and commercial sources**
+- Multi-provider LLM support: **OpenAI, Anthropic (Claude), Google Gemini**
 - Domain-specific routing for finance, law, engineering, creative arts, and more
+- Chain-of-thought reasoning support (o1/o3 models, Anthropic thinking tokens)
+- Configurable model parameters (temperature, retries, token limits)
 
-### Action & Labor Performing Engine
+### ⚡ Action & Labor Performing Engine
 - **Document Creation** — Drafting contracts, reports, presentations
-- **Code Generation & Execution** — Write, run, and debug software in sandboxed environments
-- **Web Interaction** — Browser automation via Playwright for research and data gathering
+- **Code Generation & Execution** — Write, run, and debug software in sandboxed environments (Docker, E2B, local)
+- **Web Interaction** — Browser automation via Playwright for research, data gathering, and web tasks
 - **Data Manipulation** — Processing, analysis, and visualization
 - **Creative Generation** — Image generation, audio transcription, media processing
-- Client-side (WebAssembly/Python) and cloud-side execution paths
+- **Client-side execution** (WebAssembly/Python) and **cloud-side execution** paths
 
-### Integration Framework
-- Web search (Tavily, Jina, SerpAPI, DuckDuckGo)
-- Third-party API integrations (Vercel, NeonDB, cloud storage)
-- Email, social media, and web service connectors (planned)
+### 🔗 Integration Framework
+- **Web search**: Tavily, Jina, SerpAPI, DuckDuckGo
+- **Web scraping**: Firecrawl integration
+- **Third-party APIs**: Vercel, NeonDB, cloud storage
+- **Cloud platforms**: Google Cloud Platform, Azure
+- **Planned**: Email, social media, calendar, CRM, project management, and web service connectors
+
+### 📤 Output Management & Refinement
+- Multi-format output rendering (text, code, images, files)
+- Iterative refinement through conversation
+- File management with workspace-per-session isolation
+- Export and download capabilities
 
 ---
 
@@ -134,6 +171,8 @@ Water AI Architecture
 └──────────────────────────────────────────────────────────┘
 ```
 
+**Client-side:** Native Fyne desktop GUI + WebAssembly runtime for local execution  
+**Server-side:** Go-based orchestration engine with multi-provider LLM routing  
 **Privacy by Design:** Minimal data retention with client-side execution options. Envisioned to run high-performance actions locally on client devices to ensure data sovereignty.
 
 ---
@@ -240,6 +279,28 @@ See [**ROADMAP.md**](ROADMAP.md) for the detailed, feature-level roadmap with im
 
 ---
 
+## 💰 Business Model
+
+| Revenue Stream | Description |
+|---|---|
+| **Community Support** | Voluntary donations from individuals and organizations who believe in the mission |
+| **Enterprise Solutions** | Volume licensing and tailored services for businesses requiring dedicated support |
+| **Usage-Based Options** | Fair pricing based on inference and cloud compute consumption |
+
+---
+
+## 💵 Funding
+
+**Funding Ask:** **$600,000** for core platform development, foundational model integration, and key engineering talent.
+
+Funds will be allocated toward:
+- **Core orchestration engine development** — Building the intelligent routing and task decomposition system
+- **Foundational specialized model integrations** — Connecting to the best AI models across every domain
+- **Key engineering talent acquisition** — Hiring world-class Go, AI/ML, and systems engineers
+- **Infrastructure and cloud compute** — Development, testing, and production environments
+
+---
+
 ## 🔓 Open Source Strategy
 
 Water AI's core components are **open-source** under the Apache 2.0 License. This strategy ensures:
@@ -251,25 +312,16 @@ Water AI's core components are **open-source** under the Apache 2.0 License. Thi
 
 ---
 
-## 💰 Business Model
+## 🏛 The Visionary & Foundation
 
-| Revenue Stream | Description |
+| | |
 |---|---|
-| **Community Support** | Voluntary donations from individuals and organizations |
-| **Enterprise Solutions** | Volume licensing and tailored services for businesses |
-| **Usage-Based Options** | Fair pricing based on inference and cloud compute consumption |
+| **Visionary** | **John Victor** — Founder of the Stellarium Foundation, architect of the Water AI vision |
+| **Organization** | **Stellarium Foundation** |
+| **Mission** | Leverage technology for global prosperity and human advancement |
+| **Goal** | The **Elevation to Eden** — using AI to unlock humanity's full potential |
 
----
-
-## 💵 Funding
-
-**Funding Ask:** **$600,000** for core platform development, foundational model integration, and key engineering talent.
-
-Funds will be allocated toward:
-- Core orchestration engine development
-- Foundational specialized model integrations
-- Key engineering talent acquisition
-- Infrastructure and cloud compute for development and testing
+John Victor conceived Water AI not as a commercial product, but as a **gift to humanity** — a platform that democratizes access to the world's most powerful AI capabilities, ensuring that every person on Earth can benefit from the AI revolution.
 
 ---
 
@@ -282,17 +334,6 @@ Water AI is an open-source project fostered by the **Stellarium Foundation**. We
 3. Commit your changes
 4. Push to the branch
 5. Open a Pull Request
-
----
-
-## 🏛 The Foundation
-
-| | |
-|---|---|
-| **Visionary** | John Victor |
-| **Organization** | Stellarium Foundation |
-| **Mission** | Leverage technology for global prosperity and human advancement |
-| **Goal** | The Elevation to Eden |
 
 ---
 
