@@ -398,14 +398,24 @@ _bundle-linux-mesa:
 	@chmod +x $(BUNDLE_DIR)/$(BINARY)
 	@# Bundle Mesa software rendering libraries
 	@echo "    Copying Mesa software renderer libraries (multiarch=$(MULTIARCH))..."
-	@SEARCH_PATHS="/usr/lib /usr/lib64"; \
+	@CANDIDATE_PATHS="/usr/lib /usr/lib64"; \
 	if [ -n "$(MULTIARCH)" ]; then \
-		SEARCH_PATHS="$$SEARCH_PATHS /usr/lib/$(MULTIARCH)"; \
+		CANDIDATE_PATHS="$$CANDIDATE_PATHS /usr/lib/$(MULTIARCH)"; \
 	fi; \
-	SEARCH_PATHS="$$SEARCH_PATHS /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu"; \
+	CANDIDATE_PATHS="$$CANDIDATE_PATHS /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu"; \
+	SEARCH_PATHS=""; \
+	for p in $$CANDIDATE_PATHS; do \
+		if [ -d "$$p" ]; then SEARCH_PATHS="$$SEARCH_PATHS $$p"; fi; \
+	done; \
+	if [ -z "$$SEARCH_PATHS" ]; then \
+		echo "      WARN: no library search paths found"; \
+	fi; \
 	for lib in libGL.so.1 libGLX.so.0 libGLdispatch.so.0 libEGL.so.1 libGLESv2.so.2; do \
-		SRC=$$(find $$SEARCH_PATHS \
-			-name "$$lib*" \( -type f -o -type l \) 2>/dev/null | head -1); \
+		SRC=""; \
+		if [ -n "$$SEARCH_PATHS" ]; then \
+			SRC=$$(find $$SEARCH_PATHS \
+				-name "$$lib*" \( -type f -o -type l \) 2>/dev/null | head -1 || true); \
+		fi; \
 		if [ -n "$$SRC" ]; then \
 			if [ -L "$$SRC" ]; then \
 				REAL=$$(readlink -f "$$SRC"); \
@@ -420,14 +430,21 @@ _bundle-linux-mesa:
 		fi; \
 	done
 	@# Bundle the swrast/llvmpipe DRI driver
-	@SEARCH_PATHS="/usr/lib /usr/lib64 /usr/lib/dri"; \
+	@CANDIDATE_PATHS="/usr/lib /usr/lib64 /usr/lib/dri"; \
 	if [ -n "$(MULTIARCH)" ]; then \
-		SEARCH_PATHS="$$SEARCH_PATHS /usr/lib/$(MULTIARCH) /usr/lib/$(MULTIARCH)/dri"; \
+		CANDIDATE_PATHS="$$CANDIDATE_PATHS /usr/lib/$(MULTIARCH) /usr/lib/$(MULTIARCH)/dri"; \
 	fi; \
-	SEARCH_PATHS="$$SEARCH_PATHS /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu"; \
+	CANDIDATE_PATHS="$$CANDIDATE_PATHS /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu"; \
+	SEARCH_PATHS=""; \
+	for p in $$CANDIDATE_PATHS; do \
+		if [ -d "$$p" ]; then SEARCH_PATHS="$$SEARCH_PATHS $$p"; fi; \
+	done; \
 	for drv in swrast_dri.so kms_swrast_dri.so; do \
-		SRC=$$(find $$SEARCH_PATHS \
-			-name "$$drv" -type f 2>/dev/null | head -1); \
+		SRC=""; \
+		if [ -n "$$SEARCH_PATHS" ]; then \
+			SRC=$$(find $$SEARCH_PATHS \
+				-name "$$drv" -type f 2>/dev/null | head -1 || true); \
+		fi; \
 		if [ -n "$$SRC" ]; then \
 			cp "$$SRC" "$(BUNDLE_DIR)/lib/dri/$$drv" 2>/dev/null || true; \
 			echo "      Bundled $$drv"; \
