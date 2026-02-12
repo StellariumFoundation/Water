@@ -33,6 +33,10 @@ It is a **gift to humanity**, designed to empower individuals and industries to 
 
 ### Prerequisites
 *   [Go 1.24+](https://golang.org/dl/)
+*   GCC / Clang (CGO is required for the Fyne GUI)
+*   Linux: `libgl1-mesa-dev`, `libxcursor-dev`, `libxrandr-dev`, `libxinerama-dev`, `libxi-dev`, `libxxf86vm-dev`
+*   macOS: Xcode Command Line Tools
+*   Windows: MinGW-w64
 
 ### Installation
 1.  **Clone the Repository**
@@ -41,12 +45,19 @@ It is a **gift to humanity**, designed to empower individuals and industries to 
     cd Water
     ```
 
-2.  **Install Dependencies**
+2.  **Build & Run**
     ```bash
     make build
-    ./water
+    ./bin/water          # Launches the gateway + Fyne GUI
+    ./bin/water server   # Headless gateway only
+    ./bin/water --version
     ```
-    *The binary will automatically fork into a background daemon and launch your local GUI.*
+    *A single binary starts both the backend gateway (port 7777) and the Fyne desktop GUI.*
+
+3.  **Release builds for all platforms**
+    ```bash
+    make release         # Outputs to dist/
+    ```
 
 ---
 

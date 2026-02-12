@@ -1,16 +1,28 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
-	"runtime"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"water-ai/core"
+	"water-ai/resources"
 	"water-ai/server"
+	"water-ai/ui"
+	"water-ai/ui/theme"
+
+	"fyne.io/fyne/v2/app"
+)
+
+// Build-time variables injected via ldflags
+var (
+	Version   = "dev"
+	GitCommit = "unknown"
+	BuildDate = "unknown"
+	GoVersion = "unknown"
 )
 
 const (
@@ -19,132 +31,115 @@ const (
 	healthURL  = serverURL + "/health"
 )
 
-
-
-
 func main() {
 	// ---------------------------------------------------------
-	// MODE 1: Background Service (The "Daemon")
+	// MODE 1: Background Service (headless daemon)
 	// ---------------------------------------------------------
-	// This block only runs when the binary is spawned with the "server" argument.
+	// When invoked with "server" argument, run only the gateway.
 	if len(os.Args) > 1 && os.Args[1] == "server" {
 		runBackgroundService()
 		return
 	}
 
 	// ---------------------------------------------------------
-	// MODE 2: Launcher (The "Client" / User Click)
+	// MODE 2: Version flag
 	// ---------------------------------------------------------
-	// This runs when you click the binary or run it in terminal.
-	runLauncherLogic()
-}
-
-// runLauncherLogic checks for the service and starts it if missing
-func runLauncherLogic() {
-	// 1. Check if the service is already alive
-	if isServerHealthy() {
-		fmt.Println("Water AI Service is already running.")
-		fmt.Println("Opening browser...")
-		_ = openBrowser(serverURL)
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
+		fmt.Printf("Water AI %s (commit: %s, built: %s, go: %s)\n",
+			Version, GitCommit, BuildDate, GoVersion)
 		return
 	}
 
-	// 2. Service is dead. We need to spawn it.
-	fmt.Println("Water AI Service is stopped. Starting background process...")
-	if err := spawnBackgroundProcess(); err != nil {
-		fmt.Printf("Fatal Error: Could not spawn service: %v\n", err)
-		os.Exit(1)
-	}
-
-	// 3. Wait for the background service to wake up
-	fmt.Print("Waiting for initialization...")
-	for i := 0; i < 20; i++ { // Wait up to 10 seconds (20 * 500ms)
-		if isServerHealthy() {
-			fmt.Println("\nSuccess! Water AI is ready.")
-			fmt.Println("Opening browser...")
-			_ = openBrowser(serverURL)
-			return
-		}
-		time.Sleep(500 * time.Millisecond)
-		fmt.Print(".")
-	}
-
-	fmt.Println("\nError: Timed out waiting for Water AI to start.")
-	fmt.Println("Please check logs or try running 'water-ai server' manually to debug.")
-	os.Exit(1)
+	// ---------------------------------------------------------
+	// MODE 3: Unified GUI + Gateway (default)
+	// ---------------------------------------------------------
+	// Start the gateway in a background goroutine, then launch
+	// the Fyne GUI on the main thread. When the GUI window is
+	// closed the gateway is gracefully shut down.
+	runUnified()
 }
 
-// runBackgroundService is the actual blocking web server
-func runBackgroundService() {
-	// Setup Logging
+// runUnified starts the gateway service in a goroutine and the Fyne GUI
+// on the main thread. The gateway is shut down when the GUI exits.
+func runUnified() {
 	logger := core.Logger
-	logger.Info("Water AI Background Service Started", "port", serverPort)
 
-	// Initialize the Server (API + Static Files + WebSocket)
+	// --- Start the gateway server in the background ---
 	srv := server.CreateServer(server.Config{
 		Port: serverPort,
 	})
 
-	// Ensure we have a specific health check endpoint for the launcher
+	// Add health endpoint for connectivity checks
 	srv.Router.GET("/health", func(c *gin.Context) {
 		c.Status(http.StatusOK)
 	})
 
-	// Run blocking
+	httpServer := &http.Server{
+		Addr:    ":" + serverPort,
+		Handler: srv.Router,
+	}
+
+	go func() {
+		logger.Info("Water AI gateway starting", "port", serverPort)
+		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error("Gateway failed to start", "error", err)
+		}
+	}()
+
+	// Wait briefly for the server to be ready
+	waitForServer(healthURL, 5*time.Second)
+
+	// --- Launch the Fyne GUI on the main thread ---
+	a := app.NewWithID("com.waterai.gui")
+	a.Settings().SetTheme(theme.NewWaterAITheme())
+	a.SetIcon(resources.GetLogoOnly())
+
+	mainWindow := ui.NewMainWindow(a)
+
+	// Show the window and run the event loop (blocks until quit)
+	mainWindow.ShowAndRun()
+
+	// --- GUI has exited — shut down the gateway gracefully ---
+	logger.Info("GUI closed, shutting down gateway...")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := httpServer.Shutdown(ctx); err != nil {
+		logger.Error("Gateway shutdown error", "error", err)
+	}
+	logger.Info("Water AI shut down cleanly")
+}
+
+// runBackgroundService runs the gateway as a standalone headless service.
+func runBackgroundService() {
+	logger := core.Logger
+	logger.Info("Water AI Background Service Started", "port", serverPort)
+
+	srv := server.CreateServer(server.Config{
+		Port: serverPort,
+	})
+
+	srv.Router.GET("/health", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
 	if err := srv.Router.Run(":" + serverPort); err != nil {
 		logger.Error("Service failed to start", "error", err)
 		os.Exit(1)
 	}
 }
 
-// --- Helpers ---
-
-// spawnBackgroundProcess starts a new instance of this binary with "server" arg
-func spawnBackgroundProcess() error {
-	exe, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("could not find executable path: %w", err)
+// waitForServer polls the health endpoint until it responds or the timeout elapses.
+func waitForServer(url string, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	client := http.Client{Timeout: 500 * time.Millisecond}
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(url)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-
-	// Spawn ourselves with the "server" argument
-	cmd := exec.Command(exe, "server")
-
-	// Detach from current console (Uses logic from process_windows.go / process_unix.go)
-	configureDetachedProcess(cmd)
-
-	// Ensure no I/O binding prevents detachment
-	cmd.Stdin = nil
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-
-	return cmd.Start()
-}
-
-// isServerHealthy checks if port 7777 is responding
-func isServerHealthy() bool {
-	client := http.Client{
-		Timeout: 1 * time.Second,
-	}
-	resp, err := client.Get(healthURL)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	return resp.StatusCode == http.StatusOK
-}
-
-// openBrowser opens the system default browser
-func openBrowser(url string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", url)
-	case "linux":
-		cmd = exec.Command("xdg-open", url)
-	case "windows":
-		cmd = exec.Command("cmd", "/c", "start", url)
-	default:
-		return fmt.Errorf("unsupported platform")
-	}
-	return cmd.Start()
 }

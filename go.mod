@@ -1,8 +1,6 @@
 module water-ai
 
-go 1.24.0
-
-toolchain go1.24.13
+go 1.24.13
 
 require (
 	fyne.io/fyne/v2 v2.4.3
