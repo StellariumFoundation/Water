@@ -35,7 +35,7 @@ BINARY     := Water
 MODULE     := water-ai
 CMD_PKG    := ./cmd/water
 APP_ID     := ai.water.app
-APP_ICON   := resources/logo-only.png
+APP_ICON   := $(CURDIR)/resources/logo-only.png
 
 # --- Version info (injected via ldflags) -------------------------------------
 VERSION    ?= v0.2.0
@@ -177,7 +177,7 @@ deps-linux:
 		gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
 		makeself
 	@echo "--> Installing fyne CLI..."
-	@go install fyne.io/fyne/v2/cmd/fyne@latest
+	@go install fyne.io/tools/cmd/fyne@latest
 	@echo "--> Linux dependencies installed"
 
 deps-linux-static:
@@ -200,7 +200,7 @@ deps-windows:
 deps-darwin:
 	@echo "--> macOS dependencies (Xcode CLT assumed)..."
 	@echo "--> Installing fyne CLI..."
-	@go install fyne.io/fyne/v2/cmd/fyne@latest
+	@go install fyne.io/tools/cmd/fyne@latest
 	@echo "--> macOS dependencies ready"
 
 deps:
@@ -378,15 +378,15 @@ release-darwin: deps-darwin
 	@mkdir -p $(DIST_DIR)
 	@echo "    Building $(BINARY)-darwin-amd64.app ..."
 	@CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 \
-		fyne package -os darwin -name $(BINARY) -appID ai.water.app \
-		-icon resources/logo-only.png -src $(CMD_PKG) \
+		fyne package -os darwin -name $(BINARY) -appID $(APP_ID) \
+		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
 	@mv $(BINARY).app $(DIST_DIR)/$(BINARY)-darwin-amd64.app || true
 	@cd $(DIST_DIR) && zip -r $(BINARY)-darwin-amd64.zip $(BINARY)-darwin-amd64.app && rm -rf $(BINARY)-darwin-amd64.app
 	@echo "    Building $(BINARY)-darwin-arm64.app ..."
 	@CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
-		fyne package -os darwin -name $(BINARY) -appID ai.water.app \
-		-icon resources/logo-only.png -src $(CMD_PKG) \
+		fyne package -os darwin -name $(BINARY) -appID $(APP_ID) \
+		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
 	@mv $(BINARY).app $(DIST_DIR)/$(BINARY)-darwin-arm64.app || true
 	@cd $(DIST_DIR) && zip -r $(BINARY)-darwin-arm64.zip $(BINARY)-darwin-arm64.app && rm -rf $(BINARY)-darwin-arm64.app
@@ -400,14 +400,14 @@ release-windows: deps-windows
 	@mkdir -p $(DIST_DIR)
 	@echo "    Building $(BINARY)-windows-amd64.exe ..."
 	@CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
-		fyne package -os windows -name $(BINARY) -appID ai.water.app \
-		-icon resources/logo-only.png -src $(CMD_PKG) \
+		fyne package -os windows -name $(BINARY) -appID $(APP_ID) \
+		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
 	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-amd64.exe || true
 	@echo "    Building $(BINARY)-windows-arm64.exe ..."
 	@CGO_ENABLED=1 GOOS=windows GOARCH=arm64 \
-		fyne package -os windows -name $(BINARY) -appID ai.water.app \
-		-icon resources/logo-only.png -src $(CMD_PKG) \
+		fyne package -os windows -name $(BINARY) -appID $(APP_ID) \
+		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
 	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-arm64.exe || true
 	@echo "--> Windows release binaries built"
@@ -446,15 +446,15 @@ ifeq ($(GOOS_HOST),linux)
 else ifeq ($(GOOS_HOST),darwin)
 	@echo "    (using fyne package for macOS .app bundle)"
 	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
-		fyne package -os darwin -name $(BINARY) -appID ai.water.app \
-		-icon resources/logo-only.png -src $(CMD_PKG) -release
+		fyne package -os darwin -name $(BINARY) -appID $(APP_ID) \
+		-icon $(APP_ICON) -src $(CMD_PKG) -release
 	@mv $(BINARY).app $(DIST_DIR)/$(BINARY)-$(_OS)-$(_ARCH).app || true
 	@cd $(DIST_DIR) && zip -r $(BINARY)-$(_OS)-$(_ARCH).zip $(BINARY)-$(_OS)-$(_ARCH).app && rm -rf $(BINARY)-$(_OS)-$(_ARCH).app
 else
 	@echo "    (using fyne package for Windows .exe)"
 	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
-		fyne package -os windows -name $(BINARY) -appID ai.water.app \
-		-icon resources/logo-only.png -src $(CMD_PKG) -release
+		fyne package -os windows -name $(BINARY) -appID $(APP_ID) \
+		-icon $(APP_ICON) -src $(CMD_PKG) -release
 	@mv $(BINARY).exe $(_OUT) || true
 endif
 	@echo "--> $(_OUT)"
