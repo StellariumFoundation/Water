@@ -93,8 +93,9 @@ LDFLAGS := -s -w \
 # Linux "mostly-static" linking flags: statically link the C runtime (libgcc,
 # libstdc++) so the binary has no dependency on a specific glibc/libstdc++
 # version, but leave libGL/libX11/libXcursor/… as dynamic since OpenGL is
-# always a shared library provided by the GPU driver.  The resulting binary
-# runs on any typical Linux desktop without extra packages.
+# always a shared library provided by the GPU driver.  Mesa's software
+# renderer (llvmpipe/swrast) is bundled alongside the binary as a fallback
+# for systems without a hardware OpenGL driver.
 LDFLAGS_LINUX := $(LDFLAGS) -linkmode external -extldflags '-static-libgcc -static-libstdc++'
 
 GO_BUILD_FLAGS := -trimpath -ldflags "$(LDFLAGS)"
@@ -111,6 +112,7 @@ export CGO_ENABLED := 1
         test test-unit test-race test-vet test-lint test-coverage test-short \
         release release-linux release-linux-local release-darwin release-darwin-local \
         release-windows release-windows-local release-local \
+        _bundle-linux-mesa \
         compress checksums \
         clean clean-all \
         deps deps-linux deps-windows deps-update mocks \
@@ -194,7 +196,8 @@ deps-linux-static:
 		libasound2-dev \
 		libgl-dev libx11-xcb-dev libxkbcommon-dev \
 		libwayland-dev libvulkan-dev \
-		gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+		gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+		libgl1-mesa-dri mesa-utils libosmesa6
 	@echo "--> Linux static dependencies installed"
 
 deps-windows:
@@ -361,18 +364,66 @@ endif
 	@ls -lh $(DIST_DIR)/
 
 # ------------------------------------------------------------------------------
-# release-linux — mostly-static binaries (OpenGL loaded dynamically at runtime)
+# release-linux — mostly-static binaries with bundled Mesa software renderer
 # ------------------------------------------------------------------------------
 release-linux: deps-linux-static
 	@echo "--> Building Linux release binaries (mostly-static, OpenGL loaded at runtime)..."
 	@mkdir -p $(DIST_DIR)
-	@echo "    Building $(DIST_DIR)/$(BINARY)-linux-amd64 ..."
+	@echo "    Building amd64 binary..."
 	@CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
-		go build -a $(GO_BUILD_FLAGS_LINUX) -o $(DIST_DIR)/$(BINARY)-linux-amd64 $(CMD_PKG)
-	@echo "    Building $(DIST_DIR)/$(BINARY)-linux-arm64 ..."
+		go build -a $(GO_BUILD_FLAGS_LINUX) -o $(DIST_DIR)/$(BINARY)-linux-amd64-bin $(CMD_PKG)
+	@echo "    Building arm64 binary..."
 	@CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc \
-		go build -a $(GO_BUILD_FLAGS_LINUX) -o $(DIST_DIR)/$(BINARY)-linux-arm64 $(CMD_PKG)
-	@echo "--> Linux release binaries built (mostly-static)"
+		go build -a $(GO_BUILD_FLAGS_LINUX) -o $(DIST_DIR)/$(BINARY)-linux-arm64-bin $(CMD_PKG)
+	@echo "--> Packaging Linux amd64 with Mesa software renderer fallback..."
+	@$(MAKE) _bundle-linux-mesa ARCH=amd64
+	@echo "--> Packaging Linux arm64 with Mesa software renderer fallback..."
+	@$(MAKE) _bundle-linux-mesa ARCH=arm64
+	@echo "--> Linux release packages built (with Mesa software renderer fallback)"
+
+# Internal target: bundle a Linux binary with Mesa software renderer libs
+_bundle-linux-mesa:
+	$(eval BUNDLE_DIR := $(DIST_DIR)/$(BINARY)-linux-$(ARCH))
+	@mkdir -p $(BUNDLE_DIR)/bin $(BUNDLE_DIR)/lib/dri
+	@# Copy the binary into the bundle
+	@mv $(DIST_DIR)/$(BINARY)-linux-$(ARCH)-bin $(BUNDLE_DIR)/bin/$(BINARY)
+	@# Copy the launcher script
+	@cp scripts/water-launcher.sh $(BUNDLE_DIR)/$(BINARY)
+	@chmod +x $(BUNDLE_DIR)/$(BINARY)
+	@# Bundle Mesa software rendering libraries
+	@echo "    Copying Mesa software renderer libraries..."
+	@for lib in libGL.so.1 libGLX.so.0 libGLdispatch.so.0 libEGL.so.1 libGLESv2.so.2; do \
+		SRC=$$(find /usr/lib /usr/lib64 /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu \
+			-name "$$lib*" -type f -o -name "$$lib*" -type l 2>/dev/null | head -1); \
+		if [ -n "$$SRC" ]; then \
+			if [ -L "$$SRC" ]; then \
+				REAL=$$(readlink -f "$$SRC"); \
+				cp "$$REAL" "$(BUNDLE_DIR)/lib/$$(basename $$REAL)"; \
+				cd "$(BUNDLE_DIR)/lib" && ln -sf "$$(basename $$REAL)" "$$lib" && cd ->/dev/null; \
+			else \
+				cp "$$SRC" "$(BUNDLE_DIR)/lib/$$lib"; \
+			fi; \
+			echo "      Bundled $$lib"; \
+		else \
+			echo "      WARN: $$lib not found on system"; \
+		fi; \
+	done
+	@# Bundle the swrast/llvmpipe DRI driver
+	@for drv in swrast_dri.so kms_swrast_dri.so; do \
+		SRC=$$(find /usr/lib /usr/lib64 /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu \
+			/usr/lib/dri -name "$$drv" -type f 2>/dev/null | head -1); \
+		if [ -n "$$SRC" ]; then \
+			cp "$$SRC" "$(BUNDLE_DIR)/lib/dri/$$drv"; \
+			echo "      Bundled $$drv"; \
+		else \
+			echo "      WARN: $$drv not found on system"; \
+		fi; \
+	done
+	@# Create the tarball
+	@echo "    Creating tarball $(BINARY)-linux-$(ARCH).tar.gz..."
+	@cd $(DIST_DIR) && tar czf $(BINARY)-linux-$(ARCH).tar.gz $(BINARY)-linux-$(ARCH)/
+	@rm -rf $(BUNDLE_DIR)
+	@echo "    $(DIST_DIR)/$(BINARY)-linux-$(ARCH).tar.gz"
 
 # ------------------------------------------------------------------------------
 # release-darwin — .app bundles via fyne package (self-contained)
@@ -444,9 +495,10 @@ release-local:
 	$(eval _OUT  := $(DIST_DIR)/$(BINARY)-$(_OS)-$(_ARCH)$(_EXT))
 	@echo "    Building $(_OUT) ..."
 ifeq ($(GOOS_HOST),linux)
-	@echo "    (using mostly-static linking for Linux)"
+	@echo "    (using mostly-static linking for Linux with Mesa fallback)"
 	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
-		go build -a $(GO_BUILD_FLAGS_LINUX) -o $(_OUT) $(CMD_PKG)
+		go build -a $(GO_BUILD_FLAGS_LINUX) -o $(DIST_DIR)/$(BINARY)-$(_OS)-$(_ARCH)-bin $(CMD_PKG)
+	@$(MAKE) _bundle-linux-mesa ARCH=$(_ARCH)
 else ifeq ($(GOOS_HOST),darwin)
 	@echo "    (using fyne package for macOS .app bundle)"
 	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
