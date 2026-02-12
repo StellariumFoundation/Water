@@ -201,6 +201,15 @@ jobs:
           fi
           make release-local
 
+      - name: List build outputs
+        if: always()
+        shell: bash
+        run: |
+          echo "=== dist/ directory contents ==="
+          ls -la dist/ 2>/dev/null || echo "dist/ directory not found"
+          echo "=== Searching for Water* files ==="
+          find . -maxdepth 3 -name "Water*" -type f 2>/dev/null || true
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:

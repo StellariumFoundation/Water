@@ -27,7 +27,12 @@
 # ==============================================================================
 
 # --- Shell -------------------------------------------------------------------
-SHELL      := /bin/bash
+# On Windows (MSYS2/Git Bash), /bin/bash may not exist; use 'bash' from PATH.
+ifeq ($(OS),Windows_NT)
+    SHELL      := bash
+else
+    SHELL      := /bin/bash
+endif
 .SHELLFLAGS := -euo pipefail -c
 
 # --- Project -----------------------------------------------------------------
@@ -491,7 +496,9 @@ release-windows: deps-windows
 		fyne package -os windows -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
-	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-amd64.exe || true
+	@if [ -f "$(BINARY).exe" ]; then mv "$(BINARY).exe" "$(DIST_DIR)/$(BINARY)-windows-amd64.exe"; \
+	elif [ -f "cmd/water/$(BINARY).exe" ]; then mv "cmd/water/$(BINARY).exe" "$(DIST_DIR)/$(BINARY)-windows-amd64.exe"; \
+	else echo "ERROR: $(BINARY).exe not found after fyne package (amd64)"; exit 1; fi
 	@echo "    Building $(BINARY)-windows-arm64.exe ..."
 	@echo "    (cross-compiling arm64 with CC=$${CC:-aarch64-w64-mingw32-gcc})"
 	@CGO_ENABLED=1 GOOS=windows GOARCH=arm64 \
@@ -500,7 +507,9 @@ release-windows: deps-windows
 		fyne package -os windows -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
-	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-arm64.exe || true
+	@if [ -f "$(BINARY).exe" ]; then mv "$(BINARY).exe" "$(DIST_DIR)/$(BINARY)-windows-arm64.exe"; \
+	elif [ -f "cmd/water/$(BINARY).exe" ]; then mv "cmd/water/$(BINARY).exe" "$(DIST_DIR)/$(BINARY)-windows-arm64.exe"; \
+	else echo "ERROR: $(BINARY).exe not found after fyne package (arm64)"; exit 1; fi
 	@echo "--> Windows release binaries built"
 
 # ------------------------------------------------------------------------------
@@ -516,13 +525,31 @@ ifeq ($(GOARCH_HOST),arm64)
 	@CGO_ENABLED=1 GOOS=windows GOARCH=arm64 \
 		CC=$${CC:-aarch64-w64-mingw32-gcc} \
 		fyne package -os windows -icon $(APP_ICON) --app-id $(APP_ID) \
-		-name $(BINARY) -src $(CMD_PKG) -release
+		-name $(BINARY) -src $(CMD_PKG) -release || { \
+			echo "WARN: fyne package failed, falling back to go build"; \
+			CGO_ENABLED=1 GOOS=windows GOARCH=arm64 \
+				CC=$${CC:-aarch64-w64-mingw32-gcc} \
+				go build $(GO_BUILD_FLAGS_WINDOWS_STATIC) \
+				-o $(DIST_DIR)/$(BINARY)-windows-arm64.exe $(CMD_PKG); \
+		}
 else
 	@CGO_ENABLED=1 GOOS=windows GOARCH=$(GOARCH_HOST) \
 		fyne package -os windows -icon $(APP_ICON) --app-id $(APP_ID) \
-		-name $(BINARY) -src $(CMD_PKG) -release
+		-name $(BINARY) -src $(CMD_PKG) -release || { \
+			echo "WARN: fyne package failed, falling back to go build"; \
+			CGO_ENABLED=1 GOOS=windows GOARCH=$(GOARCH_HOST) \
+				go build $(GO_BUILD_FLAGS_WINDOWS_STATIC) \
+				-o $(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe $(CMD_PKG); \
+		}
 endif
-	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe
+	@if [ -f "$(BINARY).exe" ]; then \
+		mv "$(BINARY).exe" "$(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe"; \
+	elif [ -f "cmd/water/$(BINARY).exe" ]; then \
+		mv "cmd/water/$(BINARY).exe" "$(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe"; \
+	elif [ ! -f "$(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe" ]; then \
+		echo "ERROR: Could not find $(BINARY).exe after build"; \
+		exit 1; \
+	fi
 	@echo "--> $(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe"
 
 # ------------------------------------------------------------------------------
@@ -557,8 +584,24 @@ else
 	@echo "    CC=$${CC:-default} GOARCH=$(_ARCH)"
 	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
 		fyne package -os windows -name $(BINARY) --app-id $(APP_ID) \
-		-icon $(APP_ICON) -src $(CMD_PKG) -release
-	@mv $(BINARY).exe $(_OUT) || true
+		-icon $(APP_ICON) -src $(CMD_PKG) -release || { \
+			echo "WARN: fyne package failed, falling back to go build"; \
+			CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
+				go build $(GO_BUILD_FLAGS_WINDOWS_STATIC) -o $(_OUT) $(CMD_PKG); \
+		}
+	@echo "    Searching for produced .exe files..."
+	@ls -la $(BINARY).exe 2>/dev/null || true
+	@ls -la $(CMD_PKG)/$(BINARY).exe 2>/dev/null || true
+	@if [ -f "$(BINARY).exe" ]; then \
+		mv "$(BINARY).exe" "$(_OUT)"; \
+	elif [ -f "cmd/water/$(BINARY).exe" ]; then \
+		mv "cmd/water/$(BINARY).exe" "$(_OUT)"; \
+	elif [ ! -f "$(_OUT)" ]; then \
+		echo "ERROR: Could not find $(BINARY).exe after build"; \
+		echo "    Files in current directory:"; ls -la *.exe 2>/dev/null || echo "      (no .exe files)"; \
+		echo "    Files in dist/:"; ls -la $(DIST_DIR)/ 2>/dev/null || echo "      (empty)"; \
+		exit 1; \
+	fi
 endif
 	@echo "--> $(_OUT)"
 
