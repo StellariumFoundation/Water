@@ -137,7 +137,7 @@ deps-linux:
 	@echo "--> Installing Linux system dependencies for Fyne..."
 	@sudo apt-get update -qq
 	@sudo apt-get install -y -qq gcc g++ make pkg-config \
-		libx11-dev libxrandr-dev libxcursor-dev libxinerama-dev \
+		libx11-dev libxrandr-dev libxcursor-dev libxinerama-dev libxxf86vm-dev \
 		libgl1-mesa-dev libgl-dev libglx-dev libasound2-dev
 	@echo "--> Linux dependencies installed"
 deps:
