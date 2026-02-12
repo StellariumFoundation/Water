@@ -199,7 +199,27 @@ jobs:
           if [ "${{ matrix.goos }}" = "windows" ] && [ "${{ matrix.goarch }}" = "amd64" ]; then
             export PATH="/c/msys64/mingw64/bin:${PATH}"
           fi
+          # Verify icon file exists before building
+          if [ "${{ matrix.goos }}" = "windows" ] || [ "${{ matrix.goos }}" = "darwin" ]; then
+            echo "=== Icon file check ==="
+            ls -la resources/logo-only.png
+          fi
           make release-local
+
+      - name: Verify Windows icon embedding
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "=== Verifying Windows .exe was produced ==="
+          ls -la dist/Water-windows-*.exe
+          # Verify the .exe has a reasonable size (icon-embedded binaries are larger)
+          for f in dist/Water-windows-*.exe; do
+            SIZE=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null)
+            echo "$f: ${SIZE} bytes"
+            if [ "$SIZE" -lt 1000000 ]; then
+              echo "WARNING: $f seems too small — icon may not be embedded"
+            fi
+          done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

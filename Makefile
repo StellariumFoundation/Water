@@ -463,20 +463,23 @@ _bundle-linux-mesa:
 # ------------------------------------------------------------------------------
 release-darwin: deps-darwin
 	@echo "--> Building macOS release .app bundles..."
+	@test -f $(APP_ICON) || { echo "ERROR: Icon file not found: $(APP_ICON)"; exit 1; }
 	@mkdir -p $(DIST_DIR)
 	@echo "    Building $(BINARY)-darwin-amd64.app ..."
 	@CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 \
 		fyne package -os darwin -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
-	@mv $(BINARY).app $(DIST_DIR)/$(BINARY)-darwin-amd64.app || true
+	@test -d $(BINARY).app || { echo "ERROR: fyne package failed to produce $(BINARY).app"; exit 1; }
+	@mv $(BINARY).app $(DIST_DIR)/$(BINARY)-darwin-amd64.app
 	@cd $(DIST_DIR) && zip -r $(BINARY)-darwin-amd64.zip $(BINARY)-darwin-amd64.app && rm -rf $(BINARY)-darwin-amd64.app
 	@echo "    Building $(BINARY)-darwin-arm64.app ..."
 	@CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
 		fyne package -os darwin -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
-	@mv $(BINARY).app $(DIST_DIR)/$(BINARY)-darwin-arm64.app || true
+	@test -d $(BINARY).app || { echo "ERROR: fyne package failed to produce $(BINARY).app"; exit 1; }
+	@mv $(BINARY).app $(DIST_DIR)/$(BINARY)-darwin-arm64.app
 	@cd $(DIST_DIR) && zip -r $(BINARY)-darwin-arm64.zip $(BINARY)-darwin-arm64.app && rm -rf $(BINARY)-darwin-arm64.app
 	@echo "--> macOS release .app bundles built"
 
@@ -485,13 +488,15 @@ release-darwin: deps-darwin
 # ------------------------------------------------------------------------------
 release-windows: deps-windows
 	@echo "--> Building Windows release binaries (fyne package)..."
+	@test -f $(APP_ICON) || { echo "ERROR: Icon file not found: $(APP_ICON)"; exit 1; }
 	@mkdir -p $(DIST_DIR)
 	@echo "    Building $(BINARY)-windows-amd64.exe ..."
 	@CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
 		fyne package -os windows -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
-	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-amd64.exe || true
+	@test -f $(BINARY).exe || { echo "ERROR: fyne package failed to produce $(BINARY).exe"; exit 1; }
+	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-amd64.exe
 	@echo "    Building $(BINARY)-windows-arm64.exe ..."
 	@echo "    (cross-compiling arm64 with CC=$${CC:-aarch64-w64-mingw32-gcc})"
 	@CGO_ENABLED=1 GOOS=windows GOARCH=arm64 \
@@ -500,7 +505,8 @@ release-windows: deps-windows
 		fyne package -os windows -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
-	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-arm64.exe || true
+	@test -f $(BINARY).exe || { echo "ERROR: fyne package failed to produce $(BINARY).exe"; exit 1; }
+	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-arm64.exe
 	@echo "--> Windows release binaries built"
 
 # ------------------------------------------------------------------------------
@@ -510,6 +516,7 @@ release-windows: deps-windows
 # CGO_LDFLAGS="-static -lpthread -lm" in the environment before calling this.
 release-windows-local:
 	@echo "--> Building Windows .exe for $(GOARCH_HOST) with embedded icon..."
+	@test -f $(APP_ICON) || { echo "ERROR: Icon file not found: $(APP_ICON)"; exit 1; }
 	@mkdir -p $(DIST_DIR)
 ifeq ($(GOARCH_HOST),arm64)
 	@echo "    (cross-compiling for arm64 with CC=$${CC:-aarch64-w64-mingw32-gcc})"
@@ -522,6 +529,7 @@ else
 		fyne package -os windows -icon $(APP_ICON) --app-id $(APP_ID) \
 		-name $(BINARY) -src $(CMD_PKG) -release
 endif
+	@test -f $(BINARY).exe || { echo "ERROR: fyne package failed to produce $(BINARY).exe — icon may not be embedded"; exit 1; }
 	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe
 	@echo "--> $(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe"
 
@@ -547,18 +555,22 @@ ifeq ($(GOOS_HOST),linux)
 	@$(MAKE) _bundle-linux-mesa ARCH=$(_ARCH)
 else ifeq ($(GOOS_HOST),darwin)
 	@echo "    (using fyne package for macOS .app bundle)"
+	@test -f $(APP_ICON) || { echo "ERROR: Icon file not found: $(APP_ICON)"; exit 1; }
 	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
 		fyne package -os darwin -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) -release
-	@mv $(BINARY).app $(DIST_DIR)/$(BINARY)-$(_OS)-$(_ARCH).app || true
+	@test -d $(BINARY).app || { echo "ERROR: fyne package failed to produce $(BINARY).app"; exit 1; }
+	@mv $(BINARY).app $(DIST_DIR)/$(BINARY)-$(_OS)-$(_ARCH).app
 	@cd $(DIST_DIR) && zip -r $(BINARY)-$(_OS)-$(_ARCH).zip $(BINARY)-$(_OS)-$(_ARCH).app && rm -rf $(BINARY)-$(_OS)-$(_ARCH).app
 else
 	@echo "    (using fyne package for Windows .exe)"
 	@echo "    CC=$${CC:-default} GOARCH=$(_ARCH)"
+	@test -f $(APP_ICON) || { echo "ERROR: Icon file not found: $(APP_ICON)"; exit 1; }
 	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
 		fyne package -os windows -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) -release
-	@mv $(BINARY).exe $(_OUT) || true
+	@test -f $(BINARY).exe || { echo "ERROR: fyne package failed to produce $(BINARY).exe — icon may not be embedded"; exit 1; }
+	@mv $(BINARY).exe $(_OUT)
 endif
 	@echo "--> $(_OUT)"
 
