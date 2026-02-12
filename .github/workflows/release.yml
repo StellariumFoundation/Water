@@ -86,7 +86,7 @@ jobs:
             binary: Water-linux-arm64
           - goos: darwin
             goarch: amd64
-            runner: macos-13
+            runner: macos-latest
             binary: Water-darwin-amd64
           - goos: darwin
             goarch: arm64
