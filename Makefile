@@ -43,6 +43,9 @@ DIST_DIR     := dist
 BIN_DIR      := bin
 COVERAGE_DIR := coverage
 
+# --- Test settings ------------------------------------------------------------
+TEST_TIMEOUT := 15m
+
 # --- Host detection ----------------------------------------------------------
 UNAME_S := $(shell uname -s 2>/dev/null || echo "Linux")
 UNAME_M := $(shell uname -m 2>/dev/null || echo "x86_64")
