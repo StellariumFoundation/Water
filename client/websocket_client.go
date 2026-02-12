@@ -193,10 +193,10 @@ func (c *WebSocketClient) processMessage(data []byte) {
 		var event AgentResponseEvent
 		if err := json.Unmarshal(msg.Content, &event); err == nil {
 			// Add or update the assistant message
-			msg := NewMessage("assistant", event.Text)
-			c.state.AddMessage(msg)
+			newMsg := NewMessage("assistant", event.Text)
+			c.state.AddMessage(newMsg)
 			if c.onEvent != nil {
-				c.onEvent(msg.Type, event)
+				c.onEvent(newMsg.Role, event)
 			}
 		}
 

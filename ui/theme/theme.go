@@ -58,8 +58,6 @@ func (t *WaterAITheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant
 		return color.RGBA{R: 0x00, G: 0x00, B: 0x00, A: 0x40}
 	case theme.ColorNameForeground:
 		return color.RGBA{R: 0xFF, G: 0xFF, B: 0xFF, A: 0xFF} // White text
-	case theme.ColorNameDisabledForeground:
-		return color.RGBA{R: 0x99, G: 0x99, B: 0x99, A: 0xFF}
 	case theme.ColorNameHyperlink:
 		return color.RGBA{R: 0x5E, G: 0xA3, B: 0xFC, A: 0xFF}
 	case theme.ColorNameSuccess:
@@ -68,28 +66,8 @@ func (t *WaterAITheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant
 		return color.RGBA{R: 0xFF, G: 0xA5, B: 0x00, A: 0xFF} // Orange
 	case theme.ColorNameError:
 		return color.RGBA{R: 0xE5, G: 0x4D, B: 0x4D, A: 0xFF} // Red
-	case theme.ColorNameInfo:
-		return color.RGBA{R: 0x5E, G: 0xA3, B: 0xFC, A: 0xFF} // Blue
 	case theme.ColorNameInputBorder:
 		return color.RGBA{R: 0x3A, G: 0x3B, B: 0x3F, A: 0xFF}
-	case theme.ColorNameDisabledInputBorder:
-		return color.RGBA{R: 0x2A, G: 0x2B, B: 0x2F, A: 0xFF}
-	case theme.ColorNameInputSelection:
-		return color.RGBA{R: 0x5E, G: 0xA3, B: 0xFC, A: 0x3F}
-	case theme.ColorNameInputPrompt:
-		return color.RGBA{R: 0x88, G: 0x88, B: 0x88, A: 0xFF}
-	case theme.ColorNameScrollBarControl:
-		return color.RGBA{R: 0x4A, G: 0x4B, B: 0x4F, A: 0xFF}
-	case theme.ColorNameScrollBarControlHover:
-		return color.RGBA{R: 0x5A, G: 0x5B, B: 0x5F, A: 0xFF}
-	case theme.ColorNameScrollBarControlPressed:
-		return color.RGBA{R: 0x6A, G: 0x6B, B: 0x6F, A: 0xFF}
-	case theme.ColorNameScrollBarBackground:
-		return color.RGBA{R: 0x1A, G: 0x1B, B: 0x1F, A: 0xFF}
-	case theme.ColorNameSelectionOnTop:
-		return color.RGBA{R: 0x5E, G: 0xA3, B: 0xFC, A: 0x3F}
-	case theme.ColorNameInactive:
-		return color.RGBA{R: 0x66, G: 0x66, B: 0x66, A: 0xFF}
 	default:
 		return theme.DefaultTheme().Color(name, variant)
 	}

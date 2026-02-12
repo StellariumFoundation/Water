@@ -84,7 +84,7 @@ RELEASE_TARGETS := linux/amd64 darwin/amd64 darwin/arm64 windows/amd64
         test test-short test-coverage \
         release compress checksums \
         clean clean-all \
-        deps deps-update mocks \
+        deps deps-linux deps-update mocks \
         fmt vet lint security \
         version info install run
 
@@ -108,6 +108,7 @@ help:
 	@echo "║  make compress         UPX-compress dist/ binaries         ║"
 	@echo "║  make clean            Remove build artifacts              ║"
 	@echo "║  make deps             Download Go dependencies            ║"
+	@echo "║  make deps-linux       Install Linux system dependencies  ║"
 	@echo "║  make deps-update      Update all dependencies             ║"
 	@echo "║  make lint             Run golangci-lint                   ║"
 	@echo "║  make version          Print version info                  ║"
@@ -130,8 +131,15 @@ info: version
 	@echo "CGO:        $(CGO_ENABLED)"
 
 # ==============================================================================
-# DEPENDENCIES
+# SYSTEM DEPENDENCIES
 # ==============================================================================
+deps-linux:
+	@echo "--> Installing Linux system dependencies for Fyne..."
+	@sudo apt-get update -qq
+	@sudo apt-get install -y -qq gcc g++ make pkg-config \
+		libx11-dev libxrandr-dev libxcursor-dev libxinerama-dev \
+		libgl1-mesa-dev libgl-dev libglx-dev libasound2-dev
+	@echo "--> Linux dependencies installed"
 deps:
 	@echo "--> Downloading dependencies..."
 	@go mod download
