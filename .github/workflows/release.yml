@@ -199,6 +199,11 @@ jobs:
           if [ "${{ matrix.goos }}" = "windows" ] && [ "${{ matrix.goarch }}" = "amd64" ]; then
             export PATH="/c/msys64/mingw64/bin:${PATH}"
           fi
+          # Verify icon file exists before building
+          if [ "${{ matrix.goos }}" = "windows" ] || [ "${{ matrix.goos }}" = "darwin" ]; then
+            echo "=== Icon file check ==="
+            ls -la resources/logo-only.png
+          fi
           make release-local
 
       - name: List build outputs
