@@ -488,6 +488,31 @@ release-darwin: deps-darwin
 # ------------------------------------------------------------------------------
 # release-windows — .exe with embedded manifest/icon via fyne package
 # ------------------------------------------------------------------------------
+# _find-windows-exe: helper to locate the .exe produced by fyne package.
+# fyne package may name the output based on -name, FyneApp.toml Name, or the
+# source directory (e.g. "water.exe" vs "Water.exe").  We search for all
+# plausible names so the build succeeds regardless of fyne's behaviour.
+define _find-windows-exe
+	@FOUND=""; \
+	for candidate in "$(BINARY).exe" "$$(echo $(BINARY) | tr '[:upper:]' '[:lower:]').exe" \
+	                 "$$(basename $(CMD_PKG)).exe"; do \
+		if [ -f "$$candidate" ]; then \
+			FOUND="$$candidate"; \
+			break; \
+		fi; \
+	done; \
+	if [ -z "$$FOUND" ]; then \
+		FOUND=$$(find . -maxdepth 1 -iname '*.exe' -newer Makefile -print -quit 2>/dev/null); \
+	fi; \
+	if [ -z "$$FOUND" ]; then \
+		echo "ERROR: fyne package did not produce an .exe (looked for $(BINARY).exe and variants)"; \
+		echo "       Files in current directory:"; ls -la; \
+		exit 1; \
+	fi; \
+	echo "    Found fyne output: $$FOUND"; \
+	mv "$$FOUND" "$(1)"
+endef
+
 release-windows: deps-windows
 	@echo "--> Building Windows release binaries (fyne package)..."
 	@mkdir -p $(DIST_DIR)
