@@ -395,21 +395,34 @@ release-linux: deps-linux-static
 	@$(MAKE) _bundle-linux-mesa ARCH=arm64
 	@echo "--> Linux release .run installers built (with Mesa software renderer fallback)"
 
-# Internal target: bundle a Linux binary with Mesa software renderer libs
-# and create a .run self-extracting installer via makeself
+# Internal target: bundle a Linux binary with Mesa software renderer libs,
+# all icons/assets, installer script, and create a .run self-extracting
+# installer via makeself.  The .run runs linux-install.sh which copies
+# everything to /opt/Water, creates .desktop entries, and installs icons.
 _bundle-linux-mesa:
 	$(eval BUNDLE_DIR := $(DIST_DIR)/$(BINARY)-linux-$(ARCH))
 	$(eval MULTIARCH := $(shell dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null))
-	@mkdir -p $(BUNDLE_DIR)/bin $(BUNDLE_DIR)/lib/dri
-	@# Validate icon file exists
+	@mkdir -p $(BUNDLE_DIR)/bin $(BUNDLE_DIR)/lib/dri $(BUNDLE_DIR)/icons
+	@# Validate ALL required icon/asset files exist (fail hard — no silent fallbacks)
 	@test -f $(APP_ICON) || { echo "ERROR: Icon file not found: $(APP_ICON)"; exit 1; }
+	@test -f resources/logo.png || { echo "ERROR: Asset not found: resources/logo.png"; exit 1; }
+	@test -f resources/logo-only.png || { echo "ERROR: Asset not found: resources/logo-only.png"; exit 1; }
+	@test -f resources/vscode.png || { echo "ERROR: Asset not found: resources/vscode.png"; exit 1; }
+	@test -f scripts/linux-install.sh || { echo "ERROR: Installer script not found: scripts/linux-install.sh"; exit 1; }
+	@test -f scripts/water-launcher.sh || { echo "ERROR: Launcher script not found: scripts/water-launcher.sh"; exit 1; }
 	@# Copy the binary into the bundle
 	@mv $(DIST_DIR)/$(BINARY)-linux-$(ARCH)-bin $(BUNDLE_DIR)/bin/$(BINARY)
 	@# Copy the launcher script
 	@cp scripts/water-launcher.sh $(BUNDLE_DIR)/$(BINARY)
 	@chmod +x $(BUNDLE_DIR)/$(BINARY)
-	@# Copy the icon into the bundle
-	@cp $(APP_ICON) $(BUNDLE_DIR)/icon.png
+	@# Copy ALL icons and assets into the bundle
+	@cp resources/logo.png $(BUNDLE_DIR)/icons/logo.png
+	@cp resources/logo-only.png $(BUNDLE_DIR)/icons/logo-only.png
+	@cp resources/vscode.png $(BUNDLE_DIR)/icons/vscode.png
+	@echo "    Bundled icons: logo.png, logo-only.png, vscode.png"
+	@# Copy the installer script into the bundle
+	@cp scripts/linux-install.sh $(BUNDLE_DIR)/install.sh
+	@chmod +x $(BUNDLE_DIR)/install.sh
 	@# Bundle Mesa software rendering libraries
 	@echo "    Copying Mesa software renderer libraries (multiarch=$(MULTIARCH))..."
 	@CANDIDATE_PATHS="/usr/lib /usr/lib64"; \
@@ -464,11 +477,18 @@ _bundle-linux-mesa:
 			echo "      WARN: $$drv not found on system (searched: $$SEARCH_PATHS)"; \
 		fi; \
 	done
+	@# Verify all bundled icons are present before creating the .run
+	@test -f $(BUNDLE_DIR)/icons/logo.png || { echo "ERROR: Bundled icon missing: icons/logo.png"; exit 1; }
+	@test -f $(BUNDLE_DIR)/icons/logo-only.png || { echo "ERROR: Bundled icon missing: icons/logo-only.png"; exit 1; }
+	@test -f $(BUNDLE_DIR)/icons/vscode.png || { echo "ERROR: Bundled icon missing: icons/vscode.png"; exit 1; }
+	@test -f $(BUNDLE_DIR)/install.sh || { echo "ERROR: Installer script missing from bundle"; exit 1; }
+	@echo "    Bundle contents:"
+	@find $(BUNDLE_DIR) -type f | sort | sed 's/^/      /'
 	@# Create the .run self-extracting installer via makeself
 	@echo "    Creating self-extracting installer $(BINARY)-linux-$(ARCH).run..."
 	@command -v makeself >/dev/null 2>&1 || { echo "ERROR: makeself is not installed"; exit 1; }
 	@makeself --nox11 $(BUNDLE_DIR) $(DIST_DIR)/$(BINARY)-linux-$(ARCH).run \
-		"$(BINARY) Installer" ./$(BINARY) "$@"
+		"$(BINARY) Installer" ./install.sh
 	@rm -rf $(BUNDLE_DIR)
 	@echo "    $(DIST_DIR)/$(BINARY)-linux-$(ARCH).run"
 

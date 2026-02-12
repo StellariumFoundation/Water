@@ -7,7 +7,7 @@
 # software OpenGL renderer (llvmpipe/swrast) if the system lacks a hardware
 # OpenGL driver.
 #
-# Directory layout expected:
+# Directory layout expected (works both in bundle and installed location):
 #   Water              — this launcher script (renamed from water-launcher.sh)
 #   bin/Water          — the actual binary
 #   lib/               — bundled Mesa software rendering libraries
@@ -15,6 +15,10 @@
 #     libEGL.so.1
 #     libGLX.so.0
 #     swrast_dri.so    (or other Mesa DRI drivers)
+#   icons/             — application icons
+#     logo.png
+#     logo-only.png
+#     vscode.png
 #
 # ==============================================================================
 
