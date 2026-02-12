@@ -90,7 +90,11 @@ LDFLAGS := -s -w \
 	-X 'main.BuildDate=$(BUILD_DATE)' \
 	-X 'main.GoVersion=$(GO_VERSION)'
 
+# Static linking flags for Linux (self-contained binaries)
+LDFLAGS_STATIC := $(LDFLAGS) -extldflags '-static'
+
 GO_BUILD_FLAGS := -trimpath -ldflags "$(LDFLAGS)"
+GO_BUILD_FLAGS_STATIC := -trimpath -tags static -ldflags "$(LDFLAGS_STATIC)"
 
 # CGO is required for Fyne
 export CGO_ENABLED := 1
@@ -175,6 +179,19 @@ deps-linux:
 	@echo "--> Installing fyne CLI..."
 	@go install fyne.io/fyne/v2/cmd/fyne@latest
 	@echo "--> Linux dependencies installed"
+
+deps-linux-static:
+	@echo "--> Installing Linux static-linking dependencies for Fyne..."
+	@sudo apt-get update -qq
+	@sudo apt-get install -y -qq gcc g++ make pkg-config \
+		libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
+		libx11-dev libxcursor-dev libxrandr-dev \
+		libxinerama-dev libxi-dev libxxf86vm-dev \
+		libasound2-dev \
+		libgl-dev libx11-xcb-dev libxkbcommon-dev \
+		libwayland-dev libvulkan-dev \
+		gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+	@echo "--> Linux static dependencies installed"
 
 deps-windows:
 	@echo "--> Installing Windows (MSYS2) dependencies for Fyne..."
@@ -340,115 +357,59 @@ endif
 	@ls -lh $(DIST_DIR)/
 
 # ------------------------------------------------------------------------------
-# release-linux — build .run self-extracting installers with bundled icon
+# release-linux — statically linked self-contained binaries
 # ------------------------------------------------------------------------------
-release-linux: deps-linux
-	@echo "--> Building Linux release .run installers..."
-	@mkdir -p $(DIST_DIR) $(DIST_DIR)/staging
-	@# --- amd64 ---
-	@echo "    Building linux/amd64 binary..."
+release-linux: deps-linux-static
+	@echo "--> Building Linux release binaries (statically linked)..."
+	@mkdir -p $(DIST_DIR)
+	@echo "    Building $(DIST_DIR)/$(BINARY)-linux-amd64 (static)..."
 	@CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
-		go build -a $(GO_BUILD_FLAGS) -o $(DIST_DIR)/staging/$(BINARY) $(CMD_PKG)
-	@cp $(APP_ICON) $(DIST_DIR)/staging/icon.png
-	@echo '#!/bin/sh' > $(DIST_DIR)/staging/setup.sh
-	@echo 'DIR="$$(cd "$$(dirname "$$0")" && pwd)"' >> $(DIST_DIR)/staging/setup.sh
-	@echo 'chmod +x "$$DIR/$(BINARY)"' >> $(DIST_DIR)/staging/setup.sh
-	@echo 'exec "$$DIR/$(BINARY)" "$$@"' >> $(DIST_DIR)/staging/setup.sh
-	@chmod +x $(DIST_DIR)/staging/setup.sh
-	@makeself --nox11 $(DIST_DIR)/staging $(DIST_DIR)/$(BINARY)-linux-amd64.run \
-		"$(BINARY) $(VERSION)" ./setup.sh
-	@rm -rf $(DIST_DIR)/staging
-	@# --- arm64 ---
-	@echo "    Building linux/arm64 binary..."
-	@mkdir -p $(DIST_DIR)/staging
+		go build -a $(GO_BUILD_FLAGS_STATIC) -o $(DIST_DIR)/$(BINARY)-linux-amd64 $(CMD_PKG)
+	@echo "    Building $(DIST_DIR)/$(BINARY)-linux-arm64 (static)..."
 	@CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc \
-		go build -a $(GO_BUILD_FLAGS) -o $(DIST_DIR)/staging/$(BINARY) $(CMD_PKG)
-	@cp $(APP_ICON) $(DIST_DIR)/staging/icon.png
-	@echo '#!/bin/sh' > $(DIST_DIR)/staging/setup.sh
-	@echo 'DIR="$$(cd "$$(dirname "$$0")" && pwd)"' >> $(DIST_DIR)/staging/setup.sh
-	@echo 'chmod +x "$$DIR/$(BINARY)"' >> $(DIST_DIR)/staging/setup.sh
-	@echo 'exec "$$DIR/$(BINARY)" "$$@"' >> $(DIST_DIR)/staging/setup.sh
-	@chmod +x $(DIST_DIR)/staging/setup.sh
-	@makeself --nox11 $(DIST_DIR)/staging $(DIST_DIR)/$(BINARY)-linux-arm64.run \
-		"$(BINARY) $(VERSION)" ./setup.sh
-	@rm -rf $(DIST_DIR)/staging
-	@echo "--> Linux .run installers built"
+		go build -a $(GO_BUILD_FLAGS_STATIC) -o $(DIST_DIR)/$(BINARY)-linux-arm64 $(CMD_PKG)
+	@echo "--> Linux release binaries built (statically linked)"
 
 # ------------------------------------------------------------------------------
-# release-linux-local — build a single .run for the current arch only (CI use)
-# ------------------------------------------------------------------------------
-release-linux-local: deps-linux
-	@echo "--> Building Linux .run installer for $(GOARCH_HOST)..."
-	@mkdir -p $(DIST_DIR)/staging
-	@CGO_ENABLED=1 GOOS=linux GOARCH=$(GOARCH_HOST) \
-		go build -a $(GO_BUILD_FLAGS) -o $(DIST_DIR)/staging/$(BINARY) $(CMD_PKG)
-	@cp $(APP_ICON) $(DIST_DIR)/staging/icon.png
-	@echo '#!/bin/sh' > $(DIST_DIR)/staging/setup.sh
-	@echo 'DIR="$$(cd "$$(dirname "$$0")" && pwd)"' >> $(DIST_DIR)/staging/setup.sh
-	@echo 'chmod +x "$$DIR/$(BINARY)"' >> $(DIST_DIR)/staging/setup.sh
-	@echo 'exec "$$DIR/$(BINARY)" "$$@"' >> $(DIST_DIR)/staging/setup.sh
-	@chmod +x $(DIST_DIR)/staging/setup.sh
-	@makeself --nox11 $(DIST_DIR)/staging $(DIST_DIR)/$(BINARY)-linux-$(GOARCH_HOST).run \
-		"$(BINARY) $(VERSION)" ./setup.sh
-	@rm -rf $(DIST_DIR)/staging
-	@echo "--> $(DIST_DIR)/$(BINARY)-linux-$(GOARCH_HOST).run"
-
-# ------------------------------------------------------------------------------
-# release-darwin — build .dmg disk images with bundled .app and icon
+# release-darwin — .app bundles via fyne package (self-contained)
 # ------------------------------------------------------------------------------
 release-darwin: deps-darwin
-	@echo "--> Building macOS release .dmg images..."
+	@echo "--> Building macOS release .app bundles..."
 	@mkdir -p $(DIST_DIR)
-	@# --- amd64 ---
-	@echo "    Packaging darwin/amd64 .app bundle..."
+	@echo "    Building $(BINARY)-darwin-amd64.app ..."
 	@CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 \
-		fyne package -os darwin -icon $(APP_ICON) -appID $(APP_ID) \
-		-name $(BINARY) -src $(CMD_PKG) -release
-	@echo "    Creating $(BINARY)-darwin-amd64.dmg..."
-	@hdiutil create -volname "$(BINARY)" -srcfolder $(BINARY).app \
-		-ov -format UDZO $(DIST_DIR)/$(BINARY)-darwin-amd64.dmg
-	@rm -rf $(BINARY).app
-	@# --- arm64 ---
-	@echo "    Packaging darwin/arm64 .app bundle..."
+		fyne package -os darwin -name $(BINARY) -appID ai.water.app \
+		-icon resources/logo-only.png -src $(CMD_PKG) \
+		-release
+	@mv $(BINARY).app $(DIST_DIR)/$(BINARY)-darwin-amd64.app || true
+	@cd $(DIST_DIR) && zip -r $(BINARY)-darwin-amd64.zip $(BINARY)-darwin-amd64.app && rm -rf $(BINARY)-darwin-amd64.app
+	@echo "    Building $(BINARY)-darwin-arm64.app ..."
 	@CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
-		fyne package -os darwin -icon $(APP_ICON) -appID $(APP_ID) \
-		-name $(BINARY) -src $(CMD_PKG) -release
-	@echo "    Creating $(BINARY)-darwin-arm64.dmg..."
-	@hdiutil create -volname "$(BINARY)" -srcfolder $(BINARY).app \
-		-ov -format UDZO $(DIST_DIR)/$(BINARY)-darwin-arm64.dmg
-	@rm -rf $(BINARY).app
-	@echo "--> macOS .dmg images built"
+		fyne package -os darwin -name $(BINARY) -appID ai.water.app \
+		-icon resources/logo-only.png -src $(CMD_PKG) \
+		-release
+	@mv $(BINARY).app $(DIST_DIR)/$(BINARY)-darwin-arm64.app || true
+	@cd $(DIST_DIR) && zip -r $(BINARY)-darwin-arm64.zip $(BINARY)-darwin-arm64.app && rm -rf $(BINARY)-darwin-arm64.app
+	@echo "--> macOS release .app bundles built"
 
 # ------------------------------------------------------------------------------
-# release-darwin-local — build a single .dmg for the current arch only (CI use)
-# ------------------------------------------------------------------------------
-release-darwin-local: deps-darwin
-	@echo "--> Building macOS .dmg for $(GOARCH_HOST)..."
-	@mkdir -p $(DIST_DIR)
-	@CGO_ENABLED=1 GOOS=darwin GOARCH=$(GOARCH_HOST) \
-		fyne package -os darwin -icon $(APP_ICON) -appID $(APP_ID) \
-		-name $(BINARY) -src $(CMD_PKG) -release
-	@hdiutil create -volname "$(BINARY)" -srcfolder $(BINARY).app \
-		-ov -format UDZO $(DIST_DIR)/$(BINARY)-darwin-$(GOARCH_HOST).dmg
-	@rm -rf $(BINARY).app
-	@echo "--> $(DIST_DIR)/$(BINARY)-darwin-$(GOARCH_HOST).dmg"
-
-# ------------------------------------------------------------------------------
-# release-windows — build .exe with embedded icon via fyne package
+# release-windows — .exe with embedded manifest/icon via fyne package
 # ------------------------------------------------------------------------------
 release-windows: deps-windows
-	@echo "--> Building Windows release binaries with embedded icon..."
+	@echo "--> Building Windows release binaries (fyne package)..."
 	@mkdir -p $(DIST_DIR)
-	@echo "    Packaging windows/amd64 .exe..."
+	@echo "    Building $(BINARY)-windows-amd64.exe ..."
 	@CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
-		fyne package -os windows -icon $(APP_ICON) -appID $(APP_ID) \
-		-name $(BINARY) -src $(CMD_PKG) -release
-	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-amd64.exe
-	@echo "    Packaging windows/arm64 .exe..."
+		fyne package -os windows -name $(BINARY) -appID ai.water.app \
+		-icon resources/logo-only.png -src $(CMD_PKG) \
+		-release
+	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-amd64.exe || true
+	@echo "    Building $(BINARY)-windows-arm64.exe ..."
 	@CGO_ENABLED=1 GOOS=windows GOARCH=arm64 \
-		fyne package -os windows -icon $(APP_ICON) -appID $(APP_ID) \
-		-name $(BINARY) -src $(CMD_PKG) -release
-	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-arm64.exe
+		fyne package -os windows -name $(BINARY) -appID ai.water.app \
+		-icon resources/logo-only.png -src $(CMD_PKG) \
+		-release
+	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-arm64.exe || true
 	@echo "--> Windows release binaries built"
 
 # ------------------------------------------------------------------------------
@@ -472,13 +433,31 @@ release-local:
 	@echo "╔══════════════════════════════════════════════════════════════╗"
 	@echo "║       BUILDING RELEASE ARTIFACT (native platform)          ║"
 	@echo "╚══════════════════════════════════════════════════════════════╝"
+	@mkdir -p $(DIST_DIR)
+	$(eval _OS   := $(or $(GOOS),$(GOOS_HOST)))
+	$(eval _ARCH := $(or $(GOARCH),$(GOARCH_HOST)))
+	$(eval _EXT  := $(if $(filter windows,$(_OS)),.exe,))
+	$(eval _OUT  := $(DIST_DIR)/$(BINARY)-$(_OS)-$(_ARCH)$(_EXT))
+	@echo "    Building $(_OUT) ..."
 ifeq ($(GOOS_HOST),linux)
-	@$(MAKE) release-linux-local
+	@echo "    (using static linking for Linux)"
+	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
+		go build -a $(GO_BUILD_FLAGS_STATIC) -o $(_OUT) $(CMD_PKG)
 else ifeq ($(GOOS_HOST),darwin)
-	@$(MAKE) release-darwin-local
+	@echo "    (using fyne package for macOS .app bundle)"
+	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
+		fyne package -os darwin -name $(BINARY) -appID ai.water.app \
+		-icon resources/logo-only.png -src $(CMD_PKG) -release
+	@mv $(BINARY).app $(DIST_DIR)/$(BINARY)-$(_OS)-$(_ARCH).app || true
+	@cd $(DIST_DIR) && zip -r $(BINARY)-$(_OS)-$(_ARCH).zip $(BINARY)-$(_OS)-$(_ARCH).app && rm -rf $(BINARY)-$(_OS)-$(_ARCH).app
 else
-	@$(MAKE) release-windows-local
+	@echo "    (using fyne package for Windows .exe)"
+	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
+		fyne package -os windows -name $(BINARY) -appID ai.water.app \
+		-icon resources/logo-only.png -src $(CMD_PKG) -release
+	@mv $(BINARY).exe $(_OUT) || true
 endif
+	@echo "--> $(_OUT)"
 
 checksums:
 	@if [ -d "$(DIST_DIR)" ] && [ "$$(ls -A $(DIST_DIR) 2>/dev/null)" ]; then \

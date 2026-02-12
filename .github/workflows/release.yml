@@ -2,14 +2,13 @@
 # WATER AI — CI + RELEASE PIPELINE
 # ==============================================================================
 #
-# Runs all tests, then builds native release artifacts on each platform runner
+# Runs all tests, then builds self-contained binaries on each platform runner
 # and collects them into a single GitHub Release using the VERSION from the
 # Makefile.
 #
-# Artifact formats:
-#   macOS   → .dmg disk image (drag-to-Applications)
-#   Linux   → .run self-extracting installer (via makeself)
-#   Windows → .exe with embedded app icon (via fyne package)
+# Linux:   statically linked binaries (no runtime dependencies)
+# macOS:   .app bundles via fyne package (zipped for release)
+# Windows: .exe with embedded manifest/icon via fyne package
 #
 # ==============================================================================
 
@@ -73,7 +72,7 @@ jobs:
         run: make test
 
   # ==============================================================================
-  # JOB 2 — Build native release artifacts on each platform
+  # JOB 2 — Build self-contained binaries on each platform
   # ==============================================================================
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
@@ -82,22 +81,25 @@ jobs:
     strategy:
       matrix:
         include:
+          # --- Linux: statically linked binaries ---
           - goos: linux
             goarch: amd64
             runner: ubuntu-latest
-            artifact: Water-linux-amd64.run
+            artifact: Water-linux-amd64
           - goos: linux
             goarch: arm64
             runner: ubuntu-24.04-arm
-            artifact: Water-linux-arm64.run
+            artifact: Water-linux-arm64
+          # --- macOS: .app bundles (zipped) ---
           - goos: darwin
             goarch: amd64
             runner: macos-latest
-            artifact: Water-darwin-amd64.dmg
+            artifact: Water-darwin-amd64.zip
           - goos: darwin
             goarch: arm64
             runner: macos-latest
-            artifact: Water-darwin-arm64.dmg
+            artifact: Water-darwin-arm64.zip
+          # --- Windows: .exe with embedded manifest/icon ---
           - goos: windows
             goarch: amd64
             runner: windows-latest
@@ -120,7 +122,8 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: Install Linux dependencies
+      # --- Linux: install static linking dependencies ---
+      - name: Install Linux dependencies (static)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
@@ -128,14 +131,16 @@ jobs:
             libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
             libx11-dev libxcursor-dev libxrandr-dev \
             libxinerama-dev libxi-dev libxxf86vm-dev \
-            libasound2-dev makeself
-          go install fyne.io/fyne/v2/cmd/fyne@latest
+            libasound2-dev \
+            libgl-dev libx11-xcb-dev libxkbcommon-dev \
+            libwayland-dev libvulkan-dev
 
-      - name: Install macOS dependencies
+      # --- macOS: install fyne CLI for .app bundling ---
+      - name: Install fyne CLI (macOS)
         if: runner.os == 'macOS'
-        run: |
-          go install fyne.io/fyne/v2/cmd/fyne@latest
+        run: go install fyne.io/fyne/v2/cmd/fyne@latest
 
+      # --- Windows: install MSYS2 + fyne CLI ---
       - name: Install Windows amd64 dependencies
         if: runner.os == 'Windows' && matrix.goarch == 'amd64'
         uses: msys2/setup-msys2@v2
@@ -157,7 +162,8 @@ jobs:
         shell: bash
         run: go install fyne.io/fyne/v2/cmd/fyne@latest
 
-      - name: Build release artifact
+      # --- Build release binary/bundle ---
+      - name: Build release binary
         shell: bash
         env:
           CGO_ENABLED: '1'
