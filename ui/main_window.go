@@ -12,7 +12,6 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/driver/desktop"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -246,7 +245,7 @@ func (mw *MainWindow) updateConnectionStatus(connected bool, status string) {
 // onStateChange handles state changes
 func (mw *MainWindow) onStateChange() {
 	// Update UI components on the main thread
-	fyne.CurrentApp().Driver().RunOnMainGoroutine(func() {
+	fyne.Do(func() {
 		mw.chatView.Refresh()
 		mw.browserPanel.Refresh()
 		mw.codePanel.Refresh()
@@ -262,7 +261,7 @@ func (mw *MainWindow) onStateChange() {
 // onEvent handles WebSocket events
 func (mw *MainWindow) onEvent(eventType string, content interface{}) {
 	// Handle specific events on the main thread
-	fyne.CurrentApp().Driver().RunOnMainGoroutine(func() {
+	fyne.Do(func() {
 		switch eventType {
 		case client.EventTypeToolCall:
 			if tc, ok := content.(client.ToolCallEvent); ok {
@@ -321,14 +320,14 @@ func (mw *MainWindow) handleToolResult(tr client.ToolResultEvent) {
 
 // onConnected handles connection established
 func (mw *MainWindow) onConnected() {
-	fyne.CurrentApp().Driver().RunOnMainGoroutine(func() {
+	fyne.Do(func() {
 		mw.updateConnectionStatus(true, "Connected")
 	})
 }
 
 // onDisconnected handles disconnection
 func (mw *MainWindow) onDisconnected() {
-	fyne.CurrentApp().Driver().RunOnMainGoroutine(func() {
+	fyne.Do(func() {
 		mw.updateConnectionStatus(false, "Disconnected")
 	})
 }
