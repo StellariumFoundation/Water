@@ -1,9 +1,12 @@
 # ==============================================================================
-# WATER AI — RELEASE PIPELINE
+# WATER AI — RELEASE PIPELINE (Native Platform Matrix)
 # ==============================================================================
-#
-# Uses a matrix strategy to build each platform on its native runner,
-# avoiding CGO cross-compilation issues (Fyne requires CGO_ENABLED=1).
+
+
+
+# Builds native binaries on each platform runner and collects them into a
+# single GitHub Release with checksums.
+
 #
 # ==============================================================================
 
@@ -11,7 +14,6 @@ name: Release
 
 on:
   push:
-    branches: [master, main]
     tags:
       - 'v*'
   workflow_dispatch:
@@ -28,16 +30,6 @@ env:
   GO_VERSION: '1.26'
 
 # ==============================================================================
-# JOB 1 — Build each platform on its native runner
-# ==============================================================================
-jobs:
-  build:
-    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
           - goos: linux
             goarch: amd64
             runner: ubuntu-latest
@@ -67,34 +59,49 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      # --- Linux dependencies (Fyne needs OpenGL / X11 headers) ---
-      - name: Install Fyne dependencies (Linux)
-        if: matrix.goos == 'linux'
+# --- Linux dependencies ---
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+
+
+
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc g++ pkg-config \
             libgl1-mesa-dev libglu1-mesa-dev \
             libx11-dev libxcursor-dev libxrandr-dev \
             libxinerama-dev libxi-dev libxxf86vm-dev \
-            libasound2-dev pkg-config gcc g++
+            libasound2-dev
 
-      # --- macOS: Xcode CLT is pre-installed on GitHub runners ---
-
-      # --- Windows: MSYS2 / MinGW for CGO ---
-      - name: Install MinGW (Windows)
-        if: matrix.goos == 'windows'
+      # --- Windows dependencies (MSYS2) ---
+      - name: Install Windows dependencies
+        if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           update: true
           install: mingw-w64-x86_64-gcc pkg-config
 
-      - name: Extract Version
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Extract version
         id: version
         shell: bash
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
             VERSION="${{ github.event.inputs.version }}"
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
           else
             VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "v0.1.0-dev")
           fi
@@ -149,10 +156,13 @@ jobs:
       - name: Generate Checksums
         run: |
           cd dist
-          sha256sum * > checksums.sha256
-          echo "Artifacts:" && ls -la
+          sha256sum Water-* > checksums.sha256
+          echo "=== Artifacts ==="
+          ls -la
+          echo "=== Checksums ==="
+          cat checksums.sha256
 
-      - name: Create Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}
