@@ -1,21 +1,23 @@
 # ==============================================================================
-# WATER AI — RELEASE PIPELINE (Native Platform Matrix)
+# WATER AI — CI + RELEASE PIPELINE
 # ==============================================================================
-
-
-
-# Builds native binaries on each platform runner and collects them into a
-# single GitHub Release with checksums.
-
+#
+# Runs all tests, then builds native binaries on each platform runner and
+# collects them into a single GitHub Release using the VERSION from the Makefile.
 #
 # ==============================================================================
 
-name: Release
+name: CI & Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
   workflow_dispatch:
     inputs:
       version:
@@ -27,14 +29,50 @@ permissions:
   contents: write
 
 env:
-  GO_VERSION: '1.26'
+  GO_VERSION: '1.24'
 
 # ==============================================================================
-# JOB 1 — Build native binaries on each platform
+# JOB 1 — Run all tests
 # ==============================================================================
 jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc g++ pkg-config \
+            libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
+            libx11-dev libxcursor-dev libxrandr-dev \
+            libxinerama-dev libxi-dev libxxf86vm-dev \
+            libasound2-dev
+
+      - name: Download Go dependencies
+        run: |
+          go mod download
+          go mod tidy
+
+      - name: Run all tests
+        run: make test
+
+  # ==============================================================================
+  # JOB 2 — Build native binaries on each platform
+  # ==============================================================================
   build:
-    name: Build
+    name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+    needs: test
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     strategy:
       matrix:
         include:
@@ -42,6 +80,10 @@ jobs:
             goarch: amd64
             runner: ubuntu-latest
             binary: Water-linux-amd64
+          - goos: linux
+            goarch: arm64
+            runner: ubuntu-latest
+            binary: Water-linux-arm64
           - goos: darwin
             goarch: amd64
             runner: macos-latest
@@ -54,6 +96,10 @@ jobs:
             goarch: amd64
             runner: windows-latest
             binary: Water-windows-amd64.exe
+          - goos: windows
+            goarch: arm64
+            runner: windows-latest
+            binary: Water-windows-arm64.exe
     runs-on: ${{ matrix.runner }}
 
     steps:
@@ -68,7 +114,6 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      # --- Linux dependencies ---
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
@@ -77,9 +122,9 @@ jobs:
             libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
             libx11-dev libxcursor-dev libxrandr-dev \
             libxinerama-dev libxi-dev libxxf86vm-dev \
-            libasound2-dev
+            libasound2-dev \
+            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
-      # --- Windows dependencies (MSYS2) ---
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
         uses: msys2/setup-msys2@v2
@@ -88,62 +133,53 @@ jobs:
           update: true
           install: mingw-w64-x86_64-gcc pkg-config
 
-      - name: Extract version
+      - name: Build release binary
+        shell: bash
+        env:
+          CGO_ENABLED: '1'
+          TARGET_OS: ${{ matrix.goos }}
+          TARGET_ARCH: ${{ matrix.goarch }}
+        run: make release-local
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/Water-*
+          retention-days: 1
+
+  # ==============================================================================
+  # JOB 3 — Collect all artifacts and create a single GitHub Release
+  # ==============================================================================
+  release:
+    name: Create Release
+    needs: build
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract VERSION from Makefile
         id: version
         shell: bash
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
             VERSION="${{ github.event.inputs.version }}"
-          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/}"
           else
-            VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "v0.1.0-dev")
+            VERSION=$(grep -E '^VERSION\s*:=' Makefile | head -1 | sed 's/.*:=\s*//' | xargs)
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Build release binaries
-        shell: bash
-        env:
-          CGO_ENABLED: '1'
-          VERSION: ${{ steps.version.outputs.version }}
-        run: make release
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: binaries-${{ matrix.os }}
-          path: dist/Water-*
-          retention-days: 1
-
-  # ==============================================================================
-  # JOB 2 — Collect all artifacts and create a single GitHub Release
-  # ==============================================================================
-  release:
-    name: Create Release
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout (for release notes context)
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+          echo "Resolved version: $VERSION"
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
-
-      - name: Extract Version
-        id: version
-        run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-          else
-            VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "v0.1.0-dev")
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Generate Checksums
         run: |
@@ -155,47 +191,17 @@ jobs:
           cat checksums.sha256
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.version.outputs.version }}
-          name: "Water AI ${{ steps.version.outputs.version }}"
-          draft: false
-          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
-          files: dist/*
-          generate_release_notes: true
-          body: |
-            ## Water AI ${{ steps.version.outputs.version }}
-
-            **Single unified binary** — starts both the gateway/backend and the Fyne GUI.
-
-            ### Downloads
-
-            | Platform | Binary |
-            |----------|--------|
-            | Linux (amd64) | `Water-linux-amd64` |
-            | Linux (arm64) | `Water-linux-arm64` |
-            | macOS (amd64) | `Water-darwin-amd64` |
-            | macOS (arm64) | `Water-darwin-arm64` |
-            | Windows (amd64) | `Water-windows-amd64.exe` |
-            | Windows (arm64) | `Water-windows-arm64.exe` |
-
-            ### Usage
-
-            ```bash
-            # Launch GUI + gateway (default)
-            ./Water-linux-amd64
-
-            # Headless gateway only
-            ./Water-linux-amd64 server
-
-            # Print version
-            ./Water-linux-amd64 --version
-            ```
-
-            ### Verification
-
-            ```bash
-            sha256sum -c checksums.sha256
-            ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          # Delete existing release/tag if it exists (idempotent re-release)
+          gh release delete "$VERSION" --yes 2>/dev/null || true
+          git tag -d "$VERSION" 2>/dev/null || true
+          git push origin ":refs/tags/$VERSION" 2>/dev/null || true
+
+          gh release create "$VERSION" \
+            --title "Water AI $VERSION" \
+            --generate-notes \
+            --latest \
+            dist/*
