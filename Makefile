@@ -11,7 +11,8 @@
 #   make build-darwin       — Cross-compile for darwin/amd64
 #   make build-windows      — Cross-compile for windows/amd64
 #   make test               — Run tests with race detection + coverage
-#   make release            — Build optimised binaries for all release targets
+#   make release            — Build optimised binaries (skip unsupported targets)
+#   make release-native     — Build optimised binary for current OS/ARCH only
 #   make compress           — UPX-compress binaries in dist/ (optional)
 #   make clean              — Remove build artifacts
 #   make help               — Show this help
@@ -44,18 +45,30 @@ BIN_DIR      := bin
 COVERAGE_DIR := coverage
 
 # --- Host detection ----------------------------------------------------------
-UNAME_S := $(shell uname -s 2>/dev/null || echo "Linux")
+UNAME_S := $(shell uname -s 2>/dev/null || echo "Windows_NT")
 UNAME_M := $(shell uname -m 2>/dev/null || echo "x86_64")
 
-ifeq ($(UNAME_S),Linux)
+# Detect GOOS_HOST — override with RELEASE_OS if set (CI matrix)
+ifdef RELEASE_OS
+    GOOS_HOST := $(RELEASE_OS)
+else ifeq ($(UNAME_S),Linux)
     GOOS_HOST := linux
 else ifeq ($(UNAME_S),Darwin)
     GOOS_HOST := darwin
+else ifneq ($(findstring MINGW,$(UNAME_S)),)
+    GOOS_HOST := windows
+else ifneq ($(findstring MSYS,$(UNAME_S)),)
+    GOOS_HOST := windows
+else ifneq ($(findstring Windows,$(UNAME_S)),)
+    GOOS_HOST := windows
 else
     GOOS_HOST := linux
 endif
 
-ifeq ($(filter $(UNAME_M),x86_64 amd64),)
+# Detect GOARCH_HOST — override with RELEASE_ARCH if set (CI matrix)
+ifdef RELEASE_ARCH
+    GOARCH_HOST := $(RELEASE_ARCH)
+else ifeq ($(filter $(UNAME_M),x86_64 amd64),)
     GOARCH_HOST := arm64
 else
     GOARCH_HOST := amd64
@@ -74,6 +87,9 @@ GO_BUILD_FLAGS := -trimpath -ldflags "$(LDFLAGS)"
 export CGO_ENABLED := 1
 
 
+# --- Test settings -----------------------------------------------------------
+TEST_TIMEOUT ?= 15m
+
 # --- Release matrix ----------------------------------------------------------
 RELEASE_TARGETS := linux/amd64 darwin/amd64 darwin/arm64 windows/amd64
 
@@ -82,7 +98,7 @@ RELEASE_TARGETS := linux/amd64 darwin/amd64 darwin/arm64 windows/amd64
 # ==============================================================================
 .PHONY: all help build build-linux build-darwin build-windows \
         test test-short test-coverage \
-        release compress checksums \
+        release release-native compress checksums \
         clean clean-all \
         deps deps-linux deps-update mocks \
         fmt vet lint security \
@@ -104,7 +120,8 @@ help:
 	@echo "║  make build-windows    Cross-compile windows/amd64         ║"
 	@echo "║  make test             Tests + race detection + coverage   ║"
 	@echo "║  make test-short       Quick tests (no race)               ║"
-	@echo "║  make release          Optimised builds for all platforms  ║"
+	@echo "║  make release          Optimised builds (skip unsupported) ║"
+	@echo "║  make release-native   Optimised build for current OS only ║"
 	@echo "║  make compress         UPX-compress dist/ binaries         ║"
 	@echo "║  make clean            Remove build artifacts              ║"
 	@echo "║  make deps             Download Go dependencies            ║"
@@ -242,31 +259,77 @@ build-dev: mocks
 	@echo "Done! Run with: ./$(BIN_DIR)/$(BINARY_NAME)"
 
 # ==============================================================================
-# RELEASE — optimised binaries for all platforms → dist/
+# RELEASE — optimised binaries → dist/
 # ==============================================================================
+
+# release-native: build only for the current host OS/ARCH (CI matrix-friendly)
+release-native: clean
+	@echo "╔══════════════════════════════════════════════════════════════╗"
+	@echo "║     BUILDING RELEASE BINARY ($(GOOS_HOST)/$(GOARCH_HOST))          ║"
+	@echo "╚══════════════════════════════════════════════════════════════╝"
+	@mkdir -p $(DIST_DIR)
+	$(eval _EXT := $(if $(filter windows,$(GOOS_HOST)),.exe,))
+	$(eval _OUT := $(DIST_DIR)/$(BINARY)-$(GOOS_HOST)-$(GOARCH_HOST)$(_EXT))
+	@echo "    Building $(_OUT) ..."
+	@CGO_ENABLED=1 GOOS=$(GOOS_HOST) GOARCH=$(GOARCH_HOST) \
+		go build -a $(GO_BUILD_FLAGS) -o $(_OUT) $(CMD_PKG)
+	@$(MAKE) checksums
+	@echo "--> Release build in $(DIST_DIR)/"
+	@ls -lh $(DIST_DIR)/
+
+# release: attempt all platforms, gracefully skip those that fail to cross-compile
 release: clean
 	@echo "╔══════════════════════════════════════════════════════════════╗"
 	@echo "║           BUILDING RELEASE BINARIES                        ║"
 	@echo "╚══════════════════════════════════════════════════════════════╝"
 	@mkdir -p $(DIST_DIR)
-	@for target in $(RELEASE_TARGETS); do \
+	@BUILT=0; SKIPPED=""; \
+	for target in $(RELEASE_TARGETS); do \
 		os=$$(echo "$$target" | cut -d'/' -f1); \
 		arch=$$(echo "$$target" | cut -d'/' -f2); \
 		ext=""; \
+		cc=""; \
 		if [ "$$os" = "windows" ]; then ext=".exe"; fi; \
+		if [ "$$os" != "$(GOOS_HOST)" ]; then \
+			if [ "$$os" = "windows" ]; then \
+				if command -v x86_64-w64-mingw32-gcc >/dev/null 2>&1; then \
+					cc="CC=x86_64-w64-mingw32-gcc"; \
+				else \
+					echo "    SKIP $$target (no mingw cross-compiler)"; \
+					SKIPPED="$$SKIPPED $$target"; \
+					continue; \
+				fi; \
+			elif [ "$$os" = "darwin" ] && [ "$(GOOS_HOST)" != "darwin" ]; then \
+				echo "    SKIP $$target (cannot cross-compile CGO to macOS from $(GOOS_HOST))"; \
+				SKIPPED="$$SKIPPED $$target"; \
+				continue; \
+			fi; \
+		fi; \
 		out="$(DIST_DIR)/$(BINARY)-$$os-$$arch$$ext"; \
 		echo "    Building $$out ..."; \
-		CGO_ENABLED=1 GOOS=$$os GOARCH=$$arch \
+		env CGO_ENABLED=1 GOOS=$$os GOARCH=$$arch $$cc \
 			go build -a $(GO_BUILD_FLAGS) -o $$out $(CMD_PKG) || \
-			{ echo "ERROR: failed to build $$out"; exit 1; }; \
-	done
+			{ echo "    SKIP $$target (build failed)"; SKIPPED="$$SKIPPED $$target"; continue; }; \
+		BUILT=$$((BUILT + 1)); \
+	done; \
+	if [ $$BUILT -eq 0 ]; then \
+		echo "ERROR: no binaries were built"; exit 1; \
+	fi; \
+	if [ -n "$$SKIPPED" ]; then \
+		echo "    Skipped targets:$$SKIPPED"; \
+	fi
 	@$(MAKE) checksums
 	@echo "--> Release builds in $(DIST_DIR)/"
 	@ls -lh $(DIST_DIR)/
 
 checksums:
 	@if [ -d "$(DIST_DIR)" ] && [ "$$(ls -A $(DIST_DIR) 2>/dev/null)" ]; then \
-		cd $(DIST_DIR) && sha256sum * > checksums.sha256 2>/dev/null || true; \
+		cd $(DIST_DIR) && \
+		if command -v sha256sum >/dev/null 2>&1; then \
+			sha256sum * > checksums.sha256 2>/dev/null || true; \
+		elif command -v shasum >/dev/null 2>&1; then \
+			shasum -a 256 * > checksums.sha256 2>/dev/null || true; \
+		fi; \
 		echo "--> $(DIST_DIR)/checksums.sha256"; \
 	fi
 
