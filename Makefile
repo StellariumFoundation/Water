@@ -57,13 +57,11 @@ ifeq ($(UNAME_S),Linux)
     GOOS_HOST := linux
 else ifeq ($(UNAME_S),Darwin)
     GOOS_HOST := darwin
-else ifneq ($(findstring MINGW,$(UNAME_S)),)
+else ifneq (,$(findstring MINGW,$(UNAME_S)))
     GOOS_HOST := windows
-else ifneq ($(findstring MSYS,$(UNAME_S)),)
+else ifneq (,$(findstring MSYS,$(UNAME_S)))
     GOOS_HOST := windows
-else ifneq ($(findstring Windows,$(UNAME_S)),)
-    GOOS_HOST := windows
-else ifeq ($(OS),Windows_NT)
+else ifneq (,$(findstring Windows,$(UNAME_S)))
     GOOS_HOST := windows
 else
     GOOS_HOST := linux
@@ -73,6 +71,14 @@ ifeq ($(filter $(UNAME_M),x86_64 amd64),)
     GOARCH_HOST := arm64
 else
     GOARCH_HOST := amd64
+endif
+
+# Allow overriding via environment (useful in CI)
+ifdef TARGET_OS
+    GOOS_HOST := $(TARGET_OS)
+endif
+ifdef TARGET_ARCH
+    GOARCH_HOST := $(TARGET_ARCH)
 endif
 
 # --- Build flags (ultra-optimised) -------------------------------------------
@@ -96,7 +102,7 @@ export CGO_ENABLED := 1
         release release-linux release-darwin release-windows release-local \
         compress checksums \
         clean clean-all \
-        deps deps-linux deps-darwin deps-windows deps-update mocks \
+        deps deps-linux deps-windows deps-update mocks \
         fmt vet lint security \
         version info install run
 
@@ -156,15 +162,10 @@ deps-linux:
 		libgl1-mesa-dev libgl-dev libglx-dev libasound2-dev gcc-aarch64-linux-gnu
 	@echo "--> Linux dependencies installed"
 
-deps-darwin:
-	@echo "--> macOS dependencies (Xcode CLT assumed pre-installed)..."
-	@xcode-select --install 2>/dev/null || true
-	@echo "--> macOS dependencies ready"
-
 deps-windows:
-	@echo "--> Windows dependencies (MinGW / MSYS2 assumed available)..."
-	@echo "--> Windows dependencies ready"
-
+	@echo "--> Installing Windows (MSYS2) dependencies for Fyne..."
+	pacman --noconfirm -S mingw-w64-x86_64-toolchain mingw-w64-x86_64-pkg-config || true
+	@echo "--> Windows dependencies installed"
 deps:
 	@echo "--> Downloading dependencies..."
 	@go mod download
@@ -351,7 +352,14 @@ release-local:
 
 checksums:
 	@if [ -d "$(DIST_DIR)" ] && [ "$$(ls -A $(DIST_DIR) 2>/dev/null)" ]; then \
-		cd $(DIST_DIR) && sha256sum * > checksums.sha256 2>/dev/null || true; \
+		cd $(DIST_DIR) && \
+		if command -v sha256sum >/dev/null 2>&1; then \
+			sha256sum * > checksums.sha256; \
+		elif command -v shasum >/dev/null 2>&1; then \
+			shasum -a 256 * > checksums.sha256; \
+		else \
+			echo "WARN: no sha256sum or shasum found — skipping checksums"; \
+		fi; \
 		echo "--> $(DIST_DIR)/checksums.sha256"; \
 	fi
 
