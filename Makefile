@@ -378,14 +378,14 @@ release-darwin: deps-darwin
 	@mkdir -p $(DIST_DIR)
 	@echo "    Building $(BINARY)-darwin-amd64.app ..."
 	@CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 \
-		fyne package -os darwin -name $(BINARY) -appID $(APP_ID) \
+		fyne package -os darwin -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
 	@mv $(BINARY).app $(DIST_DIR)/$(BINARY)-darwin-amd64.app || true
 	@cd $(DIST_DIR) && zip -r $(BINARY)-darwin-amd64.zip $(BINARY)-darwin-amd64.app && rm -rf $(BINARY)-darwin-amd64.app
 	@echo "    Building $(BINARY)-darwin-arm64.app ..."
 	@CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
-		fyne package -os darwin -name $(BINARY) -appID $(APP_ID) \
+		fyne package -os darwin -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
 	@mv $(BINARY).app $(DIST_DIR)/$(BINARY)-darwin-arm64.app || true
@@ -400,13 +400,13 @@ release-windows: deps-windows
 	@mkdir -p $(DIST_DIR)
 	@echo "    Building $(BINARY)-windows-amd64.exe ..."
 	@CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
-		fyne package -os windows -name $(BINARY) -appID $(APP_ID) \
+		fyne package -os windows -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
 	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-amd64.exe || true
 	@echo "    Building $(BINARY)-windows-arm64.exe ..."
 	@CGO_ENABLED=1 GOOS=windows GOARCH=arm64 \
-		fyne package -os windows -name $(BINARY) -appID $(APP_ID) \
+		fyne package -os windows -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
 	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-arm64.exe || true
@@ -419,7 +419,7 @@ release-windows-local:
 	@echo "--> Building Windows .exe for $(GOARCH_HOST) with embedded icon..."
 	@mkdir -p $(DIST_DIR)
 	@CGO_ENABLED=1 GOOS=windows GOARCH=$(GOARCH_HOST) \
-		fyne package -os windows -icon $(APP_ICON) -appID $(APP_ID) \
+		fyne package -os windows -icon $(APP_ICON) --app-id $(APP_ID) \
 		-name $(BINARY) -src $(CMD_PKG) -release
 	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe
 	@echo "--> $(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe"
@@ -446,14 +446,14 @@ ifeq ($(GOOS_HOST),linux)
 else ifeq ($(GOOS_HOST),darwin)
 	@echo "    (using fyne package for macOS .app bundle)"
 	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
-		fyne package -os darwin -name $(BINARY) -appID $(APP_ID) \
+		fyne package -os darwin -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) -release
 	@mv $(BINARY).app $(DIST_DIR)/$(BINARY)-$(_OS)-$(_ARCH).app || true
 	@cd $(DIST_DIR) && zip -r $(BINARY)-$(_OS)-$(_ARCH).zip $(BINARY)-$(_OS)-$(_ARCH).app && rm -rf $(BINARY)-$(_OS)-$(_ARCH).app
 else
 	@echo "    (using fyne package for Windows .exe)"
 	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
-		fyne package -os windows -name $(BINARY) -appID $(APP_ID) \
+		fyne package -os windows -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) -release
 	@mv $(BINARY).exe $(_OUT) || true
 endif
