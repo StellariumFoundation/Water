@@ -80,12 +80,15 @@ export CGO_ENABLED := 1
 # --- Release matrix ----------------------------------------------------------
 RELEASE_TARGETS := linux/amd64 darwin/amd64 darwin/arm64 windows/amd64
 
+# --- Cross-compiler for Windows (when building from Linux) -------------------
+CC_windows_amd64 := x86_64-w64-mingw32-gcc
+
 # ==============================================================================
 # PHONY
 # ==============================================================================
 .PHONY: all help build build-linux build-darwin build-windows \
         test test-short test-coverage \
-        release compress checksums \
+        release release-local compress checksums \
         clean clean-all \
         deps deps-linux deps-update mocks \
         fmt vet lint security \
@@ -266,6 +269,26 @@ release: clean
 	@$(MAKE) checksums
 	@echo "--> Release builds in $(DIST_DIR)/"
 	@ls -lh $(DIST_DIR)/
+
+# ==============================================================================
+# RELEASE-LOCAL — build optimised binary for the current (native) platform only
+# ==============================================================================
+# Used by CI matrix builds: each runner calls `make release-local` to produce
+# only the binary matching its own OS/arch, avoiding CGO cross-compilation.
+# Override GOOS/GOARCH from the environment to target a specific platform.
+release-local:
+	@echo "╔══════════════════════════════════════════════════════════════╗"
+	@echo "║       BUILDING RELEASE BINARY (native platform)            ║"
+	@echo "╚══════════════════════════════════════════════════════════════╝"
+	@mkdir -p $(DIST_DIR)
+	$(eval _OS   := $(or $(GOOS),$(GOOS_HOST)))
+	$(eval _ARCH := $(or $(GOARCH),$(GOARCH_HOST)))
+	$(eval _EXT  := $(if $(filter windows,$(_OS)),.exe,))
+	$(eval _OUT  := $(DIST_DIR)/$(BINARY)-$(_OS)-$(_ARCH)$(_EXT))
+	@echo "    Building $(_OUT) ..."
+	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
+		go build -a $(GO_BUILD_FLAGS) -o $(_OUT) $(CMD_PKG)
+	@echo "--> $(_OUT)"
 
 checksums:
 	@if [ -d "$(DIST_DIR)" ] && [ "$$(ls -A $(DIST_DIR) 2>/dev/null)" ]; then \

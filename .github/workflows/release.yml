@@ -2,8 +2,8 @@
 # WATER AI — RELEASE PIPELINE
 # ==============================================================================
 #
-# Cross-compiles all platforms and creates GitHub releases.
-# Trigger manually or on master/main branch tags.
+# Uses a matrix strategy to build each platform on its native runner,
+# avoiding CGO cross-compilation issues (Fyne requires CGO_ENABLED=1).
 #
 # ==============================================================================
 
@@ -27,10 +27,33 @@ permissions:
 env:
   GO_VERSION: '1.26'
 
+# ==============================================================================
+# JOB 1 — Build each platform on its native runner
+# ==============================================================================
 jobs:
-  release:
-    name: Release
-    runs-on: ubuntu-latest
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            runner: ubuntu-latest
+            binary: Water-linux-amd64
+          - goos: darwin
+            goarch: amd64
+            runner: macos-latest
+            binary: Water-darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            runner: macos-latest
+            binary: Water-darwin-arm64
+          - goos: windows
+            goarch: amd64
+            runner: windows-latest
+            binary: Water-windows-amd64.exe
 
     steps:
       - name: Checkout
@@ -41,17 +64,77 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: Install Fyne system dependencies
+      # --- Linux dependencies (Fyne needs OpenGL / X11 headers) ---
+      - name: Install Fyne dependencies (Linux)
+        if: matrix.goos == 'linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libgl1-mesa-dev libglu1-mesa-dev \
             libx11-dev libxcursor-dev libxrandr-dev \
             libxinerama-dev libxi-dev libxxf86vm-dev \
-            libasound2-dev pkg-config gcc g++ mingw-w64
+            libasound2-dev pkg-config gcc g++
+
+      # --- macOS: Xcode CLT is pre-installed on GitHub runners ---
+
+      # --- Windows: MSYS2 / MinGW for CGO ---
+      - name: Install MinGW (Windows)
+        if: matrix.goos == 'windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: mingw-w64-x86_64-gcc pkg-config
+
+      - name: Extract Version
+        id: version
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "v0.1.0-dev")
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build binary
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '1'
+          VERSION: ${{ steps.version.outputs.version }}
+        run: make release-local
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary }}
+          path: dist/${{ matrix.binary }}
+          retention-days: 1
+
+  # ==============================================================================
+  # JOB 2 — Collect all artifacts and create a single GitHub Release
+  # ==============================================================================
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (for release notes context)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: Extract Version
         id: version
@@ -62,18 +145,6 @@ jobs:
             VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "v0.1.0-dev")
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Build all platforms
-        run: make release
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: water-release
-          path: dist/*
-          retention-days: 7
 
       - name: Generate Checksums
         run: |
@@ -99,22 +170,22 @@ jobs:
 
             | Platform | Binary |
             |----------|--------|
-            | Linux (amd64) | `water-linux-amd64` |
-            | macOS (amd64) | `water-darwin-amd64` |
-            | macOS (arm64) | `water-darwin-arm64` |
-            | Windows (amd64) | `water-windows-amd64.exe` |
+            | Linux (amd64) | `Water-linux-amd64` |
+            | macOS (amd64) | `Water-darwin-amd64` |
+            | macOS (arm64) | `Water-darwin-arm64` |
+            | Windows (amd64) | `Water-windows-amd64.exe` |
 
             ### Usage
 
             ```bash
             # Launch GUI + gateway (default)
-            ./water-linux-amd64
+            ./Water-linux-amd64
 
             # Headless gateway only
-            ./water-linux-amd64 server
+            ./Water-linux-amd64 server
 
             # Print version
-            ./water-linux-amd64 --version
+            ./Water-linux-amd64 --version
             ```
 
             ### Verification
