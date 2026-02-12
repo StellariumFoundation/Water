@@ -138,7 +138,7 @@ jobs:
       # --- macOS: install fyne CLI for .app bundling ---
       - name: Install fyne CLI (macOS)
         if: runner.os == 'macOS'
-        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+        run: go install fyne.io/tools/cmd/fyne@latest
 
       # --- Windows: install MSYS2 + fyne CLI ---
       - name: Install Windows amd64 dependencies
@@ -160,7 +160,7 @@ jobs:
       - name: Install fyne CLI (Windows)
         if: runner.os == 'Windows'
         shell: bash
-        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+        run: go install fyne.io/tools/cmd/fyne@latest
 
       # --- Build release binary/bundle ---
       - name: Build release binary
