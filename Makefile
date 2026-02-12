@@ -483,6 +483,31 @@ release-darwin: deps-darwin
 # ------------------------------------------------------------------------------
 # release-windows — .exe with embedded manifest/icon via fyne package
 # ------------------------------------------------------------------------------
+# _find-windows-exe: helper to locate the .exe produced by fyne package.
+# fyne package may name the output based on -name, FyneApp.toml Name, or the
+# source directory (e.g. "water.exe" vs "Water.exe").  We search for all
+# plausible names so the build succeeds regardless of fyne's behaviour.
+define _find-windows-exe
+	@FOUND=""; \
+	for candidate in "$(BINARY).exe" "$$(echo $(BINARY) | tr '[:upper:]' '[:lower:]').exe" \
+	                 "$$(basename $(CMD_PKG)).exe"; do \
+		if [ -f "$$candidate" ]; then \
+			FOUND="$$candidate"; \
+			break; \
+		fi; \
+	done; \
+	if [ -z "$$FOUND" ]; then \
+		FOUND=$$(find . -maxdepth 1 -iname '*.exe' -newer Makefile -print -quit 2>/dev/null); \
+	fi; \
+	if [ -z "$$FOUND" ]; then \
+		echo "ERROR: fyne package did not produce an .exe (looked for $(BINARY).exe and variants)"; \
+		echo "       Files in current directory:"; ls -la; \
+		exit 1; \
+	fi; \
+	echo "    Found fyne output: $$FOUND"; \
+	mv "$$FOUND" "$(1)"
+endef
+
 release-windows: deps-windows
 	@echo "--> Building Windows release binaries (fyne package)..."
 	@mkdir -p $(DIST_DIR)
@@ -491,7 +516,7 @@ release-windows: deps-windows
 		fyne package -os windows -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
-	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-amd64.exe || true
+	$(call _find-windows-exe,$(DIST_DIR)/$(BINARY)-windows-amd64.exe)
 	@echo "    Building $(BINARY)-windows-arm64.exe ..."
 	@echo "    (cross-compiling arm64 with CC=$${CC:-aarch64-w64-mingw32-gcc})"
 	@CGO_ENABLED=1 GOOS=windows GOARCH=arm64 \
@@ -500,7 +525,7 @@ release-windows: deps-windows
 		fyne package -os windows -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
-	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-arm64.exe || true
+	$(call _find-windows-exe,$(DIST_DIR)/$(BINARY)-windows-arm64.exe)
 	@echo "--> Windows release binaries built"
 
 # ------------------------------------------------------------------------------
@@ -522,7 +547,7 @@ else
 		fyne package -os windows -icon $(APP_ICON) --app-id $(APP_ID) \
 		-name $(BINARY) -src $(CMD_PKG) -release
 endif
-	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe
+	$(call _find-windows-exe,$(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe)
 	@echo "--> $(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe"
 
 # ------------------------------------------------------------------------------
@@ -558,7 +583,7 @@ else
 	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
 		fyne package -os windows -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) -release
-	@mv $(BINARY).exe $(_OUT) || true
+	$(call _find-windows-exe,$(_OUT))
 endif
 	@echo "--> $(_OUT)"
 
