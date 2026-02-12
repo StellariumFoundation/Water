@@ -11,10 +11,10 @@
 #   make build-darwin       — Cross-compile for darwin/amd64
 #   make build-windows      — Cross-compile for windows/amd64
 #   make test               — Run tests with race detection + coverage
-#   make release            — Auto-detect OS and build native amd64+arm64 binaries
-#   make release-linux      — Build linux/amd64 + linux/arm64
-#   make release-darwin     — Build darwin/amd64 + darwin/arm64
-#   make release-windows    — Build windows/amd64 + windows/arm64
+#   make release            — Auto-detect OS and build native release artifacts
+#   make release-linux      — Build linux .run self-extracting installers
+#   make release-darwin     — Build macOS .dmg disk images
+#   make release-windows    — Build windows .exe with embedded icon
 #   make compress           — UPX-compress binaries in dist/ (optional)
 #   make clean              — Remove build artifacts
 #   make help               — Show this help
@@ -34,6 +34,8 @@ SHELL      := /bin/bash
 BINARY     := Water
 MODULE     := water-ai
 CMD_PKG    := ./cmd/water
+APP_ID     := ai.water.app
+APP_ICON   := resources/logo-only.png
 
 # --- Version info (injected via ldflags) -------------------------------------
 VERSION    ?= v0.2.0
@@ -103,7 +105,8 @@ export CGO_ENABLED := 1
 # ==============================================================================
 .PHONY: all help build build-linux build-darwin build-windows \
         test test-unit test-race test-vet test-lint test-coverage test-short \
-        release release-linux release-darwin release-windows release-local \
+        release release-linux release-linux-local release-darwin release-darwin-local \
+        release-windows release-windows-local release-local \
         compress checksums \
         clean clean-all \
         deps deps-linux deps-windows deps-update mocks \
@@ -131,10 +134,10 @@ help:
 	@echo "║  make test-lint        Run linter (if available)           ║"
 	@echo "║  make test-coverage    Generate coverage report            ║"
 	@echo "║  make test-short       Quick tests (no race)               ║"
-	@echo "║  make release          Auto-detect OS & build native bins  ║"
-	@echo "║  make release-linux    Build linux/amd64 + linux/arm64     ║"
-	@echo "║  make release-darwin   Build darwin/amd64 + darwin/arm64   ║"
-	@echo "║  make release-windows  Build windows/amd64 + windows/arm64║"
+	@echo "║  make release          Auto-detect OS & build artifacts    ║"
+	@echo "║  make release-linux    Build linux .run installers         ║"
+	@echo "║  make release-darwin   Build macOS .dmg disk images        ║"
+	@echo "║  make release-windows  Build windows .exe (icon embedded)  ║"
 	@echo "║  make compress         UPX-compress dist/ binaries         ║"
 	@echo "║  make clean            Remove build artifacts              ║"
 	@echo "║  make deps             Download Go dependencies            ║"
@@ -171,7 +174,10 @@ deps-linux:
 		libx11-dev libxcursor-dev libxrandr-dev \
 		libxinerama-dev libxi-dev libxxf86vm-dev \
 		libasound2-dev \
-		gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+		gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+		makeself
+	@echo "--> Installing fyne CLI..."
+	@go install fyne.io/fyne/v2/cmd/fyne@latest
 	@echo "--> Linux dependencies installed"
 
 deps-linux-static:
@@ -193,6 +199,8 @@ deps-windows:
 	@echo "--> Windows dependencies installed"
 deps-darwin:
 	@echo "--> macOS dependencies (Xcode CLT assumed)..."
+	@echo "--> Installing fyne CLI..."
+	@go install fyne.io/fyne/v2/cmd/fyne@latest
 	@echo "--> macOS dependencies ready"
 
 deps:
@@ -405,12 +413,25 @@ release-windows: deps-windows
 	@echo "--> Windows release binaries built"
 
 # ------------------------------------------------------------------------------
-# release-local — build a single binary for the current (native) platform only
+# release-windows-local — build a single .exe for the current arch only (CI use)
 # ------------------------------------------------------------------------------
-# Kept for backward compatibility. Override GOOS/GOARCH from the environment.
+release-windows-local:
+	@echo "--> Building Windows .exe for $(GOARCH_HOST) with embedded icon..."
+	@mkdir -p $(DIST_DIR)
+	@CGO_ENABLED=1 GOOS=windows GOARCH=$(GOARCH_HOST) \
+		fyne package -os windows -icon $(APP_ICON) -appID $(APP_ID) \
+		-name $(BINARY) -src $(CMD_PKG) -release
+	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe
+	@echo "--> $(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe"
+
+# ------------------------------------------------------------------------------
+# release-local — build a single release artifact for the current platform
+# ------------------------------------------------------------------------------
+# Dispatches to the platform-specific -local target which produces the proper
+# artifact format (.dmg, .run, .exe with icon).
 release-local:
 	@echo "╔══════════════════════════════════════════════════════════════╗"
-	@echo "║       BUILDING RELEASE BINARY (native platform)            ║"
+	@echo "║       BUILDING RELEASE ARTIFACT (native platform)          ║"
 	@echo "╚══════════════════════════════════════════════════════════════╝"
 	@mkdir -p $(DIST_DIR)
 	$(eval _OS   := $(or $(GOOS),$(GOOS_HOST)))
