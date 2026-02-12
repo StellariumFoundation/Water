@@ -1,0 +1,126 @@
+# ==============================================================================
+# WATER AI — RELEASE PIPELINE
+# ==============================================================================
+#
+# Cross-compiles all platforms and creates GitHub releases.
+# Trigger manually or on master/main branch tags.
+#
+# ==============================================================================
+
+name: Release
+
+on:
+  push:
+    branches: [master, main]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version override (e.g., v1.0.0)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: '1.26'
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+          cache: true
+
+      - name: Install Fyne system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl1-mesa-dev libglu1-mesa-dev \
+            libx11-dev libxcursor-dev libxrandr-dev \
+            libxinerama-dev libxi-dev libxxf86vm-dev \
+            libasound2-dev pkg-config gcc g++ mingw-w64
+
+      - name: Extract Version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "v0.1.0-dev")
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build all platforms
+        run: make release
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: water-release
+          path: dist/*
+          retention-days: 7
+
+      - name: Generate Checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.sha256
+          echo "Artifacts:" && ls -la
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: "Water AI ${{ steps.version.outputs.version }}"
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            ## Water AI ${{ steps.version.outputs.version }}
+
+            **Single unified binary** — starts both the gateway/backend and the Fyne GUI.
+
+            ### Downloads
+
+            | Platform | Binary |
+            |----------|--------|
+            | Linux (amd64) | `water-linux-amd64` |
+            | macOS (amd64) | `water-darwin-amd64` |
+            | macOS (arm64) | `water-darwin-arm64` |
+            | Windows (amd64) | `water-windows-amd64.exe` |
+
+            ### Usage
+
+            ```bash
+            # Launch GUI + gateway (default)
+            ./water-linux-amd64
+
+            # Headless gateway only
+            ./water-linux-amd64 server
+
+            # Print version
+            ./water-linux-amd64 --version
+            ```
+
+            ### Verification
+
+            ```bash
+            sha256sum -c checksums.sha256
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
