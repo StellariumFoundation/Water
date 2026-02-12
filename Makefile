@@ -35,6 +35,9 @@ BINARY     := Water
 MODULE     := water-ai
 CMD_PKG    := ./cmd/water
 APP_ID     := ai.water.app
+# fyne package derives the output exe name from the source directory, not -name.
+# When -src ./cmd/water is used, the output is "water.exe" not "Water.exe".
+FYNE_EXE   := water
 APP_ICON   := $(CURDIR)/resources/logo-only.png
 
 # --- Version info (injected via ldflags) -------------------------------------
@@ -491,7 +494,9 @@ release-windows: deps-windows
 		fyne package -os windows -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
-	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-amd64.exe || true
+	@# fyne package outputs exe named after source dir, not -name flag
+	@mv $(FYNE_EXE).exe $(DIST_DIR)/$(BINARY)-windows-amd64.exe 2>/dev/null || \
+		mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-amd64.exe
 	@echo "    Building $(BINARY)-windows-arm64.exe ..."
 	@echo "    (cross-compiling arm64 with CC=$${CC:-aarch64-w64-mingw32-gcc})"
 	@CGO_ENABLED=1 GOOS=windows GOARCH=arm64 \
@@ -500,7 +505,9 @@ release-windows: deps-windows
 		fyne package -os windows -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
-	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-arm64.exe || true
+	@# fyne package outputs exe named after source dir, not -name flag
+	@mv $(FYNE_EXE).exe $(DIST_DIR)/$(BINARY)-windows-arm64.exe 2>/dev/null || \
+		mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-arm64.exe
 	@echo "--> Windows release binaries built"
 
 # ------------------------------------------------------------------------------
@@ -522,7 +529,9 @@ else
 		fyne package -os windows -icon $(APP_ICON) --app-id $(APP_ID) \
 		-name $(BINARY) -src $(CMD_PKG) -release
 endif
-	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe
+	@# fyne package outputs exe named after source dir, not -name flag
+	@mv $(FYNE_EXE).exe $(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe 2>/dev/null || \
+		mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe
 	@echo "--> $(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe"
 
 # ------------------------------------------------------------------------------
@@ -558,7 +567,8 @@ else
 	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
 		fyne package -os windows -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) -release
-	@mv $(BINARY).exe $(_OUT) || true
+	@# fyne package outputs exe named after source dir, not -name flag
+	@mv $(FYNE_EXE).exe $(_OUT) 2>/dev/null || mv $(BINARY).exe $(_OUT)
 endif
 	@echo "--> $(_OUT)"
 
