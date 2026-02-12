@@ -1,9 +1,12 @@
 # ==============================================================================
 # WATER AI — RELEASE PIPELINE (Native Platform Matrix)
 # ==============================================================================
-#
+
+
+
 # Builds native binaries on each platform runner and collects them into a
 # single GitHub Release with checksums.
+
 #
 # ==============================================================================
 
@@ -27,29 +30,22 @@ env:
   GO_VERSION: '1.26'
 
 # ==============================================================================
-# JOB 1 — Build native binaries on each platform
-# ==============================================================================
-jobs:
-  build:
-    name: Build (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            goos: linux
+          - goos: linux
             goarch: amd64
-            artifact: Water-linux-amd64
-          - os: macos-latest
-            goos: darwin
+            runner: ubuntu-latest
+            binary: Water-linux-amd64
+          - goos: darwin
+            goarch: amd64
+            runner: macos-latest
+            binary: Water-darwin-amd64
+          - goos: darwin
             goarch: arm64
-            artifact: Water-darwin-arm64
-          - os: windows-latest
-            goos: windows
+            runner: macos-latest
+            binary: Water-darwin-arm64
+          - goos: windows
             goarch: amd64
-            artifact: Water-windows-amd64.exe
-
-    runs-on: ${{ matrix.os }}
+            runner: windows-latest
+            binary: Water-windows-amd64.exe
 
     steps:
       - name: Checkout
@@ -63,9 +59,12 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      # --- Linux dependencies ---
+# --- Linux dependencies ---
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
+
+
+
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq gcc g++ pkg-config \
@@ -81,35 +80,7 @@ jobs:
         with:
           msystem: MINGW64
           update: true
-          install: >-
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-pkg-config
-
-      - name: Download Go modules
-        run: go mod download
-
-      - name: Build release binary
-        shell: bash
-        run: make release-local
-        env:
-          TARGET_OS: ${{ matrix.goos }}
-          TARGET_ARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: '1'
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: dist/*
-          retention-days: 1
-
-  # ==============================================================================
-  # JOB 2 — Collect all artifacts and publish a GitHub Release
-  # ==============================================================================
-  release:
-    name: Publish Release
-    needs: build
-    runs-on: ubuntu-latest
+          install: mingw-w64-x86_64-gcc pkg-config
 
     steps:
       - name: Checkout
@@ -125,6 +96,7 @@ jobs:
 
       - name: Extract version
         id: version
+        shell: bash
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
             VERSION="${{ github.event.inputs.version }}"
@@ -135,7 +107,53 @@ jobs:
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Generate checksums
+      - name: Build binary
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '1'
+          VERSION: ${{ steps.version.outputs.version }}
+        run: make release-local
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary }}
+          path: dist/${{ matrix.binary }}
+          retention-days: 1
+
+  # ==============================================================================
+  # JOB 2 — Collect all artifacts and create a single GitHub Release
+  # ==============================================================================
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout (for release notes context)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Extract Version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "v0.1.0-dev")
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Generate Checksums
         run: |
           cd dist
           sha256sum Water-* > checksums.sha256
@@ -163,6 +181,7 @@ jobs:
             | Platform | Binary |
             |----------|--------|
             | Linux (amd64) | `Water-linux-amd64` |
+            | macOS (amd64) | `Water-darwin-amd64` |
             | macOS (arm64) | `Water-darwin-arm64` |
             | Windows (amd64) | `Water-windows-amd64.exe` |
 
