@@ -150,13 +150,24 @@ jobs:
           update: true
           install: mingw-w64-x86_64-gcc pkg-config
 
-      - name: Install Windows arm64 dependencies
+      # On the native windows-11-arm runner, MSYS2 is pre-installed.
+      # We use setup-msys2 with CLANGARM64 to get the ARM64-native GCC toolchain.
+      - name: Install Windows arm64 dependencies (MSYS2 CLANGARM64)
         if: runner.os == 'Windows' && matrix.goarch == 'arm64'
         uses: msys2/setup-msys2@v2
         with:
           msystem: CLANGARM64
           update: true
-          install: mingw-w64-clang-aarch64-gcc pkg-config
+          install: >-
+            mingw-w64-clang-aarch64-toolchain
+            mingw-w64-clang-aarch64-pkg-config
+
+      # On ARM64, add the CLANGARM64 toolchain to PATH so CGO finds the
+      # native aarch64 compiler without needing a CC override.
+      - name: Add CLANGARM64 to PATH (Windows arm64)
+        if: runner.os == 'Windows' && matrix.goarch == 'arm64'
+        shell: bash
+        run: echo "C:/msys64/clangarm64/bin" >> "$GITHUB_PATH"
 
       - name: Install fyne CLI (Windows)
         if: runner.os == 'Windows'
