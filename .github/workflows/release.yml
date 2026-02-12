@@ -96,6 +96,10 @@ jobs:
             goarch: amd64
             runner: windows-latest
             binary: Water-windows-amd64.exe
+          - goos: windows
+            goarch: arm64
+            runner: windows-11-arm
+            binary: Water-windows-arm64.exe
     runs-on: ${{ matrix.runner }}
 
     steps:
@@ -120,13 +124,21 @@ jobs:
             libxinerama-dev libxi-dev libxxf86vm-dev \
             libasound2-dev
 
-      - name: Install Windows dependencies
-        if: runner.os == 'Windows'
+      - name: Install Windows amd64 dependencies
+        if: runner.os == 'Windows' && matrix.goarch == 'amd64'
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           update: true
           install: mingw-w64-x86_64-gcc pkg-config
+
+      - name: Install Windows arm64 dependencies
+        if: runner.os == 'Windows' && matrix.goarch == 'arm64'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANGARM64
+          update: true
+          install: mingw-w64-clang-aarch64-gcc pkg-config
 
       - name: Build release binary
         shell: bash
