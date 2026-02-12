@@ -47,13 +47,19 @@ COVERAGE_DIR := coverage
 TEST_TIMEOUT := 15m
 
 # --- Host detection ----------------------------------------------------------
-UNAME_S := $(shell uname -s 2>/dev/null || echo "Linux")
+UNAME_S := $(shell uname -s 2>/dev/null || echo "Windows_NT")
 UNAME_M := $(shell uname -m 2>/dev/null || echo "x86_64")
 
 ifeq ($(UNAME_S),Linux)
     GOOS_HOST := linux
 else ifeq ($(UNAME_S),Darwin)
     GOOS_HOST := darwin
+else ifneq (,$(findstring MINGW,$(UNAME_S)))
+    GOOS_HOST := windows
+else ifneq (,$(findstring MSYS,$(UNAME_S)))
+    GOOS_HOST := windows
+else ifneq (,$(findstring Windows,$(UNAME_S)))
+    GOOS_HOST := windows
 else
     GOOS_HOST := linux
 endif
@@ -62,6 +68,14 @@ ifeq ($(filter $(UNAME_M),x86_64 amd64),)
     GOARCH_HOST := arm64
 else
     GOARCH_HOST := amd64
+endif
+
+# Allow overriding via environment (useful in CI)
+ifdef TARGET_OS
+    GOOS_HOST := $(TARGET_OS)
+endif
+ifdef TARGET_ARCH
+    GOARCH_HOST := $(TARGET_ARCH)
 endif
 
 # --- Build flags (ultra-optimised) -------------------------------------------
@@ -85,9 +99,9 @@ RELEASE_TARGETS := linux/amd64 darwin/amd64 darwin/arm64 windows/amd64
 # ==============================================================================
 .PHONY: all help build build-linux build-darwin build-windows \
         test test-short test-coverage \
-        release compress checksums \
+        release release-local compress checksums \
         clean clean-all \
-        deps deps-linux deps-update mocks \
+        deps deps-linux deps-windows deps-update mocks \
         fmt vet lint security \
         version info install run
 
@@ -143,6 +157,11 @@ deps-linux:
 		libx11-dev libxrandr-dev libxcursor-dev libxinerama-dev libxxf86vm-dev \
 		libgl1-mesa-dev libgl-dev libglx-dev libasound2-dev
 	@echo "--> Linux dependencies installed"
+
+deps-windows:
+	@echo "--> Installing Windows (MSYS2) dependencies for Fyne..."
+	pacman --noconfirm -S mingw-w64-x86_64-toolchain mingw-w64-x86_64-pkg-config || true
+	@echo "--> Windows dependencies installed"
 deps:
 	@echo "--> Downloading dependencies..."
 	@go mod download
@@ -267,9 +286,29 @@ release: clean
 	@echo "--> Release builds in $(DIST_DIR)/"
 	@ls -lh $(DIST_DIR)/
 
+# --- Release-local: build optimised binary for current OS/arch only ----------
+release-local:
+	@echo "╔══════════════════════════════════════════════════════════════╗"
+	@echo "║     BUILDING RELEASE BINARY ($(GOOS_HOST)/$(GOARCH_HOST))          ║"
+	@echo "╚══════════════════════════════════════════════════════════════╝"
+	@mkdir -p $(DIST_DIR)
+	$(eval EXT := $(if $(filter windows,$(GOOS_HOST)),.exe,))
+	@echo "--> Building $(DIST_DIR)/$(BINARY)-$(GOOS_HOST)-$(GOARCH_HOST)$(EXT) ..."
+	@CGO_ENABLED=1 GOOS=$(GOOS_HOST) GOARCH=$(GOARCH_HOST) \
+		go build -a $(GO_BUILD_FLAGS) \
+		-o $(DIST_DIR)/$(BINARY)-$(GOOS_HOST)-$(GOARCH_HOST)$(EXT) $(CMD_PKG)
+	@echo "--> Built: $(DIST_DIR)/$(BINARY)-$(GOOS_HOST)-$(GOARCH_HOST)$(EXT)"
+
 checksums:
 	@if [ -d "$(DIST_DIR)" ] && [ "$$(ls -A $(DIST_DIR) 2>/dev/null)" ]; then \
-		cd $(DIST_DIR) && sha256sum * > checksums.sha256 2>/dev/null || true; \
+		cd $(DIST_DIR) && \
+		if command -v sha256sum >/dev/null 2>&1; then \
+			sha256sum * > checksums.sha256; \
+		elif command -v shasum >/dev/null 2>&1; then \
+			shasum -a 256 * > checksums.sha256; \
+		else \
+			echo "WARN: no sha256sum or shasum found — skipping checksums"; \
+		fi; \
 		echo "--> $(DIST_DIR)/checksums.sha256"; \
 	fi
 

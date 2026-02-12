@@ -1,9 +1,9 @@
 # ==============================================================================
-# WATER AI — RELEASE PIPELINE
+# WATER AI — RELEASE PIPELINE (Native Platform Matrix)
 # ==============================================================================
 #
-# Cross-compiles all platforms and creates GitHub releases.
-# Trigger manually or on master/main branch tags.
+# Builds native binaries on each platform runner and collects them into a
+# single GitHub Release with checksums.
 #
 # ==============================================================================
 
@@ -11,7 +11,6 @@ name: Release
 
 on:
   push:
-    branches: [master, main]
     tags:
       - 'v*'
   workflow_dispatch:
@@ -27,10 +26,30 @@ permissions:
 env:
   GO_VERSION: '1.26'
 
+# ==============================================================================
+# JOB 1 — Build native binaries on each platform
+# ==============================================================================
 jobs:
-  release:
-    name: Release
-    runs-on: ubuntu-latest
+  build:
+    name: Build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            artifact: Water-linux-amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            artifact: Water-darwin-arm64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            artifact: Water-windows-amd64.exe
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
@@ -41,47 +60,91 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: Install Fyne system dependencies
+      # --- Linux dependencies ---
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc g++ pkg-config \
             libgl1-mesa-dev libglu1-mesa-dev \
             libx11-dev libxcursor-dev libxrandr-dev \
             libxinerama-dev libxi-dev libxxf86vm-dev \
-            libasound2-dev pkg-config gcc g++ mingw-w64
+            libasound2-dev
 
-      - name: Extract Version
+      # --- Windows dependencies (MSYS2) ---
+      - name: Install Windows dependencies
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-pkg-config
+
+      - name: Download Go modules
+        run: go mod download
+
+      - name: Build release binary
+        shell: bash
+        run: make release-local
+        env:
+          TARGET_OS: ${{ matrix.goos }}
+          TARGET_ARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '1'
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/*
+          retention-days: 1
+
+  # ==============================================================================
+  # JOB 2 — Collect all artifacts and publish a GitHub Release
+  # ==============================================================================
+  release:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Extract version
         id: version
         run: |
           if [ -n "${{ github.event.inputs.version }}" ]; then
             VERSION="${{ github.event.inputs.version }}"
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
           else
             VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo "v0.1.0-dev")
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Build all platforms
-        run: make release
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: water-release
-          path: dist/*
-          retention-days: 7
-
-      - name: Generate Checksums
+      - name: Generate checksums
         run: |
           cd dist
-          sha256sum * > checksums.sha256
-          echo "Artifacts:" && ls -la
+          sha256sum Water-* > checksums.sha256
+          echo "=== Artifacts ==="
+          ls -la
+          echo "=== Checksums ==="
+          cat checksums.sha256
 
-      - name: Create Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}
@@ -99,22 +162,21 @@ jobs:
 
             | Platform | Binary |
             |----------|--------|
-            | Linux (amd64) | `water-linux-amd64` |
-            | macOS (amd64) | `water-darwin-amd64` |
-            | macOS (arm64) | `water-darwin-arm64` |
-            | Windows (amd64) | `water-windows-amd64.exe` |
+            | Linux (amd64) | `Water-linux-amd64` |
+            | macOS (arm64) | `Water-darwin-arm64` |
+            | Windows (amd64) | `Water-windows-amd64.exe` |
 
             ### Usage
 
             ```bash
             # Launch GUI + gateway (default)
-            ./water-linux-amd64
+            ./Water-linux-amd64
 
             # Headless gateway only
-            ./water-linux-amd64 server
+            ./Water-linux-amd64 server
 
             # Print version
-            ./water-linux-amd64 --version
+            ./Water-linux-amd64 --version
             ```
 
             ### Verification
