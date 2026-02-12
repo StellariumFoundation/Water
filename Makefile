@@ -11,7 +11,10 @@
 #   make build-darwin       — Cross-compile for darwin/amd64
 #   make build-windows      — Cross-compile for windows/amd64
 #   make test               — Run tests with race detection + coverage
-#   make release            — Build optimised binaries for all release targets
+#   make release            — Auto-detect OS and build native amd64+arm64 binaries
+#   make release-linux      — Build linux/amd64 + linux/arm64
+#   make release-darwin     — Build darwin/amd64 + darwin/arm64
+#   make release-windows    — Build windows/amd64 + windows/arm64
 #   make compress           — UPX-compress binaries in dist/ (optional)
 #   make clean              — Remove build artifacts
 #   make help               — Show this help
@@ -91,18 +94,13 @@ GO_BUILD_FLAGS := -trimpath -ldflags "$(LDFLAGS)"
 export CGO_ENABLED := 1
 
 
-# --- Release matrix ----------------------------------------------------------
-RELEASE_TARGETS := linux/amd64 darwin/amd64 darwin/arm64 windows/amd64
-
-# --- Cross-compiler for Windows (when building from Linux) -------------------
-CC_windows_amd64 := x86_64-w64-mingw32-gcc
-
 # ==============================================================================
 # PHONY
 # ==============================================================================
 .PHONY: all help build build-linux build-darwin build-windows \
         test test-short test-coverage \
-        release release-local compress checksums \
+        release release-linux release-darwin release-windows release-local \
+        compress checksums \
         clean clean-all \
         deps deps-linux deps-windows deps-update mocks \
         fmt vet lint security \
@@ -124,7 +122,10 @@ help:
 	@echo "║  make build-windows    Cross-compile windows/amd64         ║"
 	@echo "║  make test             Tests + race detection + coverage   ║"
 	@echo "║  make test-short       Quick tests (no race)               ║"
-	@echo "║  make release          Optimised builds for all platforms  ║"
+	@echo "║  make release          Auto-detect OS & build native bins  ║"
+	@echo "║  make release-linux    Build linux/amd64 + linux/arm64     ║"
+	@echo "║  make release-darwin   Build darwin/amd64 + darwin/arm64   ║"
+	@echo "║  make release-windows  Build windows/amd64 + windows/arm64║"
 	@echo "║  make compress         UPX-compress dist/ binaries         ║"
 	@echo "║  make clean            Remove build artifacts              ║"
 	@echo "║  make deps             Download Go dependencies            ║"
@@ -158,7 +159,7 @@ deps-linux:
 	@sudo apt-get update -qq
 	@sudo apt-get install -y -qq gcc g++ make pkg-config \
 		libx11-dev libxrandr-dev libxcursor-dev libxinerama-dev libxxf86vm-dev \
-		libgl1-mesa-dev libgl-dev libglx-dev libasound2-dev
+		libgl1-mesa-dev libgl-dev libglx-dev libasound2-dev gcc-aarch64-linux-gnu
 	@echo "--> Linux dependencies installed"
 
 deps-windows:
@@ -267,34 +268,74 @@ build-dev: mocks
 	@echo "Done! Run with: ./$(BIN_DIR)/$(BINARY_NAME)"
 
 # ==============================================================================
-# RELEASE — optimised binaries for all platforms → dist/
+# RELEASE — auto-detect OS and call the appropriate platform target
 # ==============================================================================
+# Each platform target installs its own dependencies, then builds both amd64
+# and arm64 binaries natively (no cross-compilation across OS boundaries).
+# CI matrix runners each call `make release` which auto-dispatches.
+# ==============================================================================
+
 release: clean
 	@echo "╔══════════════════════════════════════════════════════════════╗"
 	@echo "║           BUILDING RELEASE BINARIES                        ║"
 	@echo "╚══════════════════════════════════════════════════════════════╝"
-	@mkdir -p $(DIST_DIR)
-	@for target in $(RELEASE_TARGETS); do \
-		os=$$(echo "$$target" | cut -d'/' -f1); \
-		arch=$$(echo "$$target" | cut -d'/' -f2); \
-		ext=""; \
-		if [ "$$os" = "windows" ]; then ext=".exe"; fi; \
-		out="$(DIST_DIR)/$(BINARY)-$$os-$$arch$$ext"; \
-		echo "    Building $$out ..."; \
-		CGO_ENABLED=1 GOOS=$$os GOARCH=$$arch \
-			go build -a $(GO_BUILD_FLAGS) -o $$out $(CMD_PKG) || \
-			{ echo "ERROR: failed to build $$out"; exit 1; }; \
-	done
+ifeq ($(GOOS_HOST),linux)
+	@$(MAKE) release-linux
+else ifeq ($(GOOS_HOST),darwin)
+	@$(MAKE) release-darwin
+else
+	@$(MAKE) release-windows
+endif
 	@$(MAKE) checksums
 	@echo "--> Release builds in $(DIST_DIR)/"
 	@ls -lh $(DIST_DIR)/
 
-# ==============================================================================
-# RELEASE-LOCAL — build optimised binary for the current (native) platform only
-# ==============================================================================
-# Used by CI matrix builds: each runner calls `make release-local` to produce
-# only the binary matching its own OS/arch, avoiding CGO cross-compilation.
-# Override GOOS/GOARCH from the environment to target a specific platform.
+# ------------------------------------------------------------------------------
+# release-linux — install deps + build linux/amd64 and linux/arm64
+# ------------------------------------------------------------------------------
+release-linux: deps-linux
+	@echo "--> Building Linux release binaries..."
+	@mkdir -p $(DIST_DIR)
+	@echo "    Building $(DIST_DIR)/$(BINARY)-linux-amd64 ..."
+	@CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
+		go build -a $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY)-linux-amd64 $(CMD_PKG)
+	@echo "    Building $(DIST_DIR)/$(BINARY)-linux-arm64 ..."
+	@CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc \
+		go build -a $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY)-linux-arm64 $(CMD_PKG)
+	@echo "--> Linux release binaries built"
+
+# ------------------------------------------------------------------------------
+# release-darwin — install deps + build darwin/amd64 and darwin/arm64
+# ------------------------------------------------------------------------------
+release-darwin: deps-darwin
+	@echo "--> Building macOS release binaries..."
+	@mkdir -p $(DIST_DIR)
+	@echo "    Building $(DIST_DIR)/$(BINARY)-darwin-amd64 ..."
+	@CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 \
+		go build -a $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY)-darwin-amd64 $(CMD_PKG)
+	@echo "    Building $(DIST_DIR)/$(BINARY)-darwin-arm64 ..."
+	@CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
+		go build -a $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY)-darwin-arm64 $(CMD_PKG)
+	@echo "--> macOS release binaries built"
+
+# ------------------------------------------------------------------------------
+# release-windows — install deps + build windows/amd64 and windows/arm64
+# ------------------------------------------------------------------------------
+release-windows: deps-windows
+	@echo "--> Building Windows release binaries..."
+	@mkdir -p $(DIST_DIR)
+	@echo "    Building $(DIST_DIR)/$(BINARY)-windows-amd64.exe ..."
+	@CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
+		go build -a $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY)-windows-amd64.exe $(CMD_PKG)
+	@echo "    Building $(DIST_DIR)/$(BINARY)-windows-arm64.exe ..."
+	@CGO_ENABLED=1 GOOS=windows GOARCH=arm64 \
+		go build -a $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY)-windows-arm64.exe $(CMD_PKG)
+	@echo "--> Windows release binaries built"
+
+# ------------------------------------------------------------------------------
+# release-local — build a single binary for the current (native) platform only
+# ------------------------------------------------------------------------------
+# Kept for backward compatibility. Override GOOS/GOARCH from the environment.
 release-local:
 	@echo "╔══════════════════════════════════════════════════════════════╗"
 	@echo "║       BUILDING RELEASE BINARY (native platform)            ║"

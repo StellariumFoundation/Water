@@ -107,20 +107,18 @@ env:
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Build binary
+      - name: Build release binaries
         shell: bash
         env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: '1'
           VERSION: ${{ steps.version.outputs.version }}
-        run: make release-local
+        run: make release
 
-      - name: Upload artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.binary }}
-          path: dist/${{ matrix.binary }}
+          name: binaries-${{ matrix.os }}
+          path: dist/Water-*
           retention-days: 1
 
   # ==============================================================================
@@ -181,9 +179,11 @@ env:
             | Platform | Binary |
             |----------|--------|
             | Linux (amd64) | `Water-linux-amd64` |
+            | Linux (arm64) | `Water-linux-arm64` |
             | macOS (amd64) | `Water-darwin-amd64` |
             | macOS (arm64) | `Water-darwin-arm64` |
             | Windows (amd64) | `Water-windows-amd64.exe` |
+            | Windows (arm64) | `Water-windows-arm64.exe` |
 
             ### Usage
 
