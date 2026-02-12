@@ -11,10 +11,10 @@
 #   make build-darwin       — Cross-compile for darwin/amd64
 #   make build-windows      — Cross-compile for windows/amd64
 #   make test               — Run tests with race detection + coverage
-#   make release            — Auto-detect OS and build native amd64+arm64 binaries
-#   make release-linux      — Build linux/amd64 + linux/arm64
-#   make release-darwin     — Build darwin/amd64 + darwin/arm64
-#   make release-windows    — Build windows/amd64 + windows/arm64
+#   make release            — Auto-detect OS and build native release artifacts
+#   make release-linux      — Build linux .run self-extracting installers
+#   make release-darwin     — Build macOS .dmg disk images
+#   make release-windows    — Build windows .exe with embedded icon
 #   make compress           — UPX-compress binaries in dist/ (optional)
 #   make clean              — Remove build artifacts
 #   make help               — Show this help
@@ -34,6 +34,8 @@ SHELL      := /bin/bash
 BINARY     := Water
 MODULE     := water-ai
 CMD_PKG    := ./cmd/water
+APP_ID     := ai.water.app
+APP_ICON   := resources/logo-only.png
 
 # --- Version info (injected via ldflags) -------------------------------------
 VERSION    ?= v0.2.0
@@ -99,7 +101,8 @@ export CGO_ENABLED := 1
 # ==============================================================================
 .PHONY: all help build build-linux build-darwin build-windows \
         test test-unit test-race test-vet test-lint test-coverage test-short \
-        release release-linux release-darwin release-windows release-local \
+        release release-linux release-linux-local release-darwin release-darwin-local \
+        release-windows release-windows-local release-local \
         compress checksums \
         clean clean-all \
         deps deps-linux deps-windows deps-update mocks \
@@ -127,10 +130,10 @@ help:
 	@echo "║  make test-lint        Run linter (if available)           ║"
 	@echo "║  make test-coverage    Generate coverage report            ║"
 	@echo "║  make test-short       Quick tests (no race)               ║"
-	@echo "║  make release          Auto-detect OS & build native bins  ║"
-	@echo "║  make release-linux    Build linux/amd64 + linux/arm64     ║"
-	@echo "║  make release-darwin   Build darwin/amd64 + darwin/arm64   ║"
-	@echo "║  make release-windows  Build windows/amd64 + windows/arm64║"
+	@echo "║  make release          Auto-detect OS & build artifacts    ║"
+	@echo "║  make release-linux    Build linux .run installers         ║"
+	@echo "║  make release-darwin   Build macOS .dmg disk images        ║"
+	@echo "║  make release-windows  Build windows .exe (icon embedded)  ║"
 	@echo "║  make compress         UPX-compress dist/ binaries         ║"
 	@echo "║  make clean            Remove build artifacts              ║"
 	@echo "║  make deps             Download Go dependencies            ║"
@@ -167,7 +170,10 @@ deps-linux:
 		libx11-dev libxcursor-dev libxrandr-dev \
 		libxinerama-dev libxi-dev libxxf86vm-dev \
 		libasound2-dev \
-		gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+		gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+		makeself
+	@echo "--> Installing fyne CLI..."
+	@go install fyne.io/fyne/v2/cmd/fyne@latest
 	@echo "--> Linux dependencies installed"
 
 deps-windows:
@@ -176,6 +182,8 @@ deps-windows:
 	@echo "--> Windows dependencies installed"
 deps-darwin:
 	@echo "--> macOS dependencies (Xcode CLT assumed)..."
+	@echo "--> Installing fyne CLI..."
+	@go install fyne.io/fyne/v2/cmd/fyne@latest
 	@echo "--> macOS dependencies ready"
 
 deps:
@@ -332,64 +340,145 @@ endif
 	@ls -lh $(DIST_DIR)/
 
 # ------------------------------------------------------------------------------
-# release-linux — install deps + build linux/amd64 and linux/arm64
+# release-linux — build .run self-extracting installers with bundled icon
 # ------------------------------------------------------------------------------
 release-linux: deps-linux
-	@echo "--> Building Linux release binaries..."
-	@mkdir -p $(DIST_DIR)
-	@echo "    Building $(DIST_DIR)/$(BINARY)-linux-amd64 ..."
+	@echo "--> Building Linux release .run installers..."
+	@mkdir -p $(DIST_DIR) $(DIST_DIR)/staging
+	@# --- amd64 ---
+	@echo "    Building linux/amd64 binary..."
 	@CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
-		go build -a $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY)-linux-amd64 $(CMD_PKG)
-	@echo "    Building $(DIST_DIR)/$(BINARY)-linux-arm64 ..."
+		go build -a $(GO_BUILD_FLAGS) -o $(DIST_DIR)/staging/$(BINARY) $(CMD_PKG)
+	@cp $(APP_ICON) $(DIST_DIR)/staging/icon.png
+	@echo '#!/bin/sh' > $(DIST_DIR)/staging/setup.sh
+	@echo 'DIR="$$(cd "$$(dirname "$$0")" && pwd)"' >> $(DIST_DIR)/staging/setup.sh
+	@echo 'chmod +x "$$DIR/$(BINARY)"' >> $(DIST_DIR)/staging/setup.sh
+	@echo 'exec "$$DIR/$(BINARY)" "$$@"' >> $(DIST_DIR)/staging/setup.sh
+	@chmod +x $(DIST_DIR)/staging/setup.sh
+	@makeself --nox11 $(DIST_DIR)/staging $(DIST_DIR)/$(BINARY)-linux-amd64.run \
+		"$(BINARY) $(VERSION)" ./setup.sh
+	@rm -rf $(DIST_DIR)/staging
+	@# --- arm64 ---
+	@echo "    Building linux/arm64 binary..."
+	@mkdir -p $(DIST_DIR)/staging
 	@CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc \
-		go build -a $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY)-linux-arm64 $(CMD_PKG)
-	@echo "--> Linux release binaries built"
+		go build -a $(GO_BUILD_FLAGS) -o $(DIST_DIR)/staging/$(BINARY) $(CMD_PKG)
+	@cp $(APP_ICON) $(DIST_DIR)/staging/icon.png
+	@echo '#!/bin/sh' > $(DIST_DIR)/staging/setup.sh
+	@echo 'DIR="$$(cd "$$(dirname "$$0")" && pwd)"' >> $(DIST_DIR)/staging/setup.sh
+	@echo 'chmod +x "$$DIR/$(BINARY)"' >> $(DIST_DIR)/staging/setup.sh
+	@echo 'exec "$$DIR/$(BINARY)" "$$@"' >> $(DIST_DIR)/staging/setup.sh
+	@chmod +x $(DIST_DIR)/staging/setup.sh
+	@makeself --nox11 $(DIST_DIR)/staging $(DIST_DIR)/$(BINARY)-linux-arm64.run \
+		"$(BINARY) $(VERSION)" ./setup.sh
+	@rm -rf $(DIST_DIR)/staging
+	@echo "--> Linux .run installers built"
 
 # ------------------------------------------------------------------------------
-# release-darwin — install deps + build darwin/amd64 and darwin/arm64
+# release-linux-local — build a single .run for the current arch only (CI use)
+# ------------------------------------------------------------------------------
+release-linux-local: deps-linux
+	@echo "--> Building Linux .run installer for $(GOARCH_HOST)..."
+	@mkdir -p $(DIST_DIR)/staging
+	@CGO_ENABLED=1 GOOS=linux GOARCH=$(GOARCH_HOST) \
+		go build -a $(GO_BUILD_FLAGS) -o $(DIST_DIR)/staging/$(BINARY) $(CMD_PKG)
+	@cp $(APP_ICON) $(DIST_DIR)/staging/icon.png
+	@echo '#!/bin/sh' > $(DIST_DIR)/staging/setup.sh
+	@echo 'DIR="$$(cd "$$(dirname "$$0")" && pwd)"' >> $(DIST_DIR)/staging/setup.sh
+	@echo 'chmod +x "$$DIR/$(BINARY)"' >> $(DIST_DIR)/staging/setup.sh
+	@echo 'exec "$$DIR/$(BINARY)" "$$@"' >> $(DIST_DIR)/staging/setup.sh
+	@chmod +x $(DIST_DIR)/staging/setup.sh
+	@makeself --nox11 $(DIST_DIR)/staging $(DIST_DIR)/$(BINARY)-linux-$(GOARCH_HOST).run \
+		"$(BINARY) $(VERSION)" ./setup.sh
+	@rm -rf $(DIST_DIR)/staging
+	@echo "--> $(DIST_DIR)/$(BINARY)-linux-$(GOARCH_HOST).run"
+
+# ------------------------------------------------------------------------------
+# release-darwin — build .dmg disk images with bundled .app and icon
 # ------------------------------------------------------------------------------
 release-darwin: deps-darwin
-	@echo "--> Building macOS release binaries..."
+	@echo "--> Building macOS release .dmg images..."
 	@mkdir -p $(DIST_DIR)
-	@echo "    Building $(DIST_DIR)/$(BINARY)-darwin-amd64 ..."
+	@# --- amd64 ---
+	@echo "    Packaging darwin/amd64 .app bundle..."
 	@CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 \
-		go build -a $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY)-darwin-amd64 $(CMD_PKG)
-	@echo "    Building $(DIST_DIR)/$(BINARY)-darwin-arm64 ..."
+		fyne package -os darwin -icon $(APP_ICON) -appID $(APP_ID) \
+		-name $(BINARY) -src $(CMD_PKG) -release
+	@echo "    Creating $(BINARY)-darwin-amd64.dmg..."
+	@hdiutil create -volname "$(BINARY)" -srcfolder $(BINARY).app \
+		-ov -format UDZO $(DIST_DIR)/$(BINARY)-darwin-amd64.dmg
+	@rm -rf $(BINARY).app
+	@# --- arm64 ---
+	@echo "    Packaging darwin/arm64 .app bundle..."
 	@CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
-		go build -a $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY)-darwin-arm64 $(CMD_PKG)
-	@echo "--> macOS release binaries built"
+		fyne package -os darwin -icon $(APP_ICON) -appID $(APP_ID) \
+		-name $(BINARY) -src $(CMD_PKG) -release
+	@echo "    Creating $(BINARY)-darwin-arm64.dmg..."
+	@hdiutil create -volname "$(BINARY)" -srcfolder $(BINARY).app \
+		-ov -format UDZO $(DIST_DIR)/$(BINARY)-darwin-arm64.dmg
+	@rm -rf $(BINARY).app
+	@echo "--> macOS .dmg images built"
 
 # ------------------------------------------------------------------------------
-# release-windows — install deps + build windows/amd64 and windows/arm64
+# release-darwin-local — build a single .dmg for the current arch only (CI use)
+# ------------------------------------------------------------------------------
+release-darwin-local: deps-darwin
+	@echo "--> Building macOS .dmg for $(GOARCH_HOST)..."
+	@mkdir -p $(DIST_DIR)
+	@CGO_ENABLED=1 GOOS=darwin GOARCH=$(GOARCH_HOST) \
+		fyne package -os darwin -icon $(APP_ICON) -appID $(APP_ID) \
+		-name $(BINARY) -src $(CMD_PKG) -release
+	@hdiutil create -volname "$(BINARY)" -srcfolder $(BINARY).app \
+		-ov -format UDZO $(DIST_DIR)/$(BINARY)-darwin-$(GOARCH_HOST).dmg
+	@rm -rf $(BINARY).app
+	@echo "--> $(DIST_DIR)/$(BINARY)-darwin-$(GOARCH_HOST).dmg"
+
+# ------------------------------------------------------------------------------
+# release-windows — build .exe with embedded icon via fyne package
 # ------------------------------------------------------------------------------
 release-windows: deps-windows
-	@echo "--> Building Windows release binaries..."
+	@echo "--> Building Windows release binaries with embedded icon..."
 	@mkdir -p $(DIST_DIR)
-	@echo "    Building $(DIST_DIR)/$(BINARY)-windows-amd64.exe ..."
+	@echo "    Packaging windows/amd64 .exe..."
 	@CGO_ENABLED=1 GOOS=windows GOARCH=amd64 \
-		go build -a $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY)-windows-amd64.exe $(CMD_PKG)
-	@echo "    Building $(DIST_DIR)/$(BINARY)-windows-arm64.exe ..."
+		fyne package -os windows -icon $(APP_ICON) -appID $(APP_ID) \
+		-name $(BINARY) -src $(CMD_PKG) -release
+	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-amd64.exe
+	@echo "    Packaging windows/arm64 .exe..."
 	@CGO_ENABLED=1 GOOS=windows GOARCH=arm64 \
-		go build -a $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY)-windows-arm64.exe $(CMD_PKG)
+		fyne package -os windows -icon $(APP_ICON) -appID $(APP_ID) \
+		-name $(BINARY) -src $(CMD_PKG) -release
+	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-arm64.exe
 	@echo "--> Windows release binaries built"
 
 # ------------------------------------------------------------------------------
-# release-local — build a single binary for the current (native) platform only
+# release-windows-local — build a single .exe for the current arch only (CI use)
 # ------------------------------------------------------------------------------
-# Kept for backward compatibility. Override GOOS/GOARCH from the environment.
+release-windows-local:
+	@echo "--> Building Windows .exe for $(GOARCH_HOST) with embedded icon..."
+	@mkdir -p $(DIST_DIR)
+	@CGO_ENABLED=1 GOOS=windows GOARCH=$(GOARCH_HOST) \
+		fyne package -os windows -icon $(APP_ICON) -appID $(APP_ID) \
+		-name $(BINARY) -src $(CMD_PKG) -release
+	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe
+	@echo "--> $(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe"
+
+# ------------------------------------------------------------------------------
+# release-local — build a single release artifact for the current platform
+# ------------------------------------------------------------------------------
+# Dispatches to the platform-specific -local target which produces the proper
+# artifact format (.dmg, .run, .exe with icon).
 release-local:
 	@echo "╔══════════════════════════════════════════════════════════════╗"
-	@echo "║       BUILDING RELEASE BINARY (native platform)            ║"
+	@echo "║       BUILDING RELEASE ARTIFACT (native platform)          ║"
 	@echo "╚══════════════════════════════════════════════════════════════╝"
-	@mkdir -p $(DIST_DIR)
-	$(eval _OS   := $(or $(GOOS),$(GOOS_HOST)))
-	$(eval _ARCH := $(or $(GOARCH),$(GOARCH_HOST)))
-	$(eval _EXT  := $(if $(filter windows,$(_OS)),.exe,))
-	$(eval _OUT  := $(DIST_DIR)/$(BINARY)-$(_OS)-$(_ARCH)$(_EXT))
-	@echo "    Building $(_OUT) ..."
-	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
-		go build -a $(GO_BUILD_FLAGS) -o $(_OUT) $(CMD_PKG)
-	@echo "--> $(_OUT)"
+ifeq ($(GOOS_HOST),linux)
+	@$(MAKE) release-linux-local
+else ifeq ($(GOOS_HOST),darwin)
+	@$(MAKE) release-darwin-local
+else
+	@$(MAKE) release-windows-local
+endif
 
 checksums:
 	@if [ -d "$(DIST_DIR)" ] && [ "$$(ls -A $(DIST_DIR) 2>/dev/null)" ]; then \
