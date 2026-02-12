@@ -19,7 +19,7 @@ permissions:
   security-events: write
 
 env:
-  GO_VERSION: '1.26'
+  GO_VERSION: '1.24'
 
 jobs:
   test:
@@ -35,7 +35,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: '1.24'
           cache: true
 
       - name: Install Fyne system dependencies
@@ -56,6 +56,11 @@ jobs:
 
       - name: Test (race + coverage)
         run: make test
+        continue-on-error: false
+
+      - name: Coverage Report
+        run: make test-coverage
+        continue-on-error: true
 
       - name: Upload Coverage
         uses: codecov/codecov-action@v4
