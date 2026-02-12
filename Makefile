@@ -90,11 +90,7 @@ LDFLAGS := -s -w \
 	-X 'main.BuildDate=$(BUILD_DATE)' \
 	-X 'main.GoVersion=$(GO_VERSION)'
 
-# Static linking flags for Linux (self-contained binaries)
-LDFLAGS_STATIC := $(LDFLAGS) -extldflags '-static'
-
 GO_BUILD_FLAGS := -trimpath -ldflags "$(LDFLAGS)"
-GO_BUILD_FLAGS_STATIC := -trimpath -tags static -ldflags "$(LDFLAGS_STATIC)"
 
 # CGO is required for Fyne
 export CGO_ENABLED := 1
@@ -180,8 +176,8 @@ deps-linux:
 	@go install fyne.io/tools/cmd/fyne@latest
 	@echo "--> Linux dependencies installed"
 
-deps-linux-static:
-	@echo "--> Installing Linux static-linking dependencies for Fyne..."
+deps-linux-release:
+	@echo "--> Installing Linux release dependencies for Fyne..."
 	@sudo apt-get update -qq
 	@sudo apt-get install -y -qq gcc g++ make pkg-config \
 		libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
@@ -191,7 +187,7 @@ deps-linux-static:
 		libgl-dev libx11-xcb-dev libxkbcommon-dev \
 		libwayland-dev libvulkan-dev \
 		gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-	@echo "--> Linux static dependencies installed"
+	@echo "--> Linux release dependencies installed"
 
 deps-windows:
 	@echo "--> Installing Windows (MSYS2) dependencies for Fyne..."
@@ -357,18 +353,18 @@ endif
 	@ls -lh $(DIST_DIR)/
 
 # ------------------------------------------------------------------------------
-# release-linux — statically linked self-contained binaries
+# release-linux — dynamically linked binaries (OpenGL requires dynamic linking)
 # ------------------------------------------------------------------------------
-release-linux: deps-linux-static
-	@echo "--> Building Linux release binaries (statically linked)..."
+release-linux: deps-linux-release
+	@echo "--> Building Linux release binaries..."
 	@mkdir -p $(DIST_DIR)
-	@echo "    Building $(DIST_DIR)/$(BINARY)-linux-amd64 (static)..."
+	@echo "    Building $(DIST_DIR)/$(BINARY)-linux-amd64..."
 	@CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
-		go build -a $(GO_BUILD_FLAGS_STATIC) -o $(DIST_DIR)/$(BINARY)-linux-amd64 $(CMD_PKG)
-	@echo "    Building $(DIST_DIR)/$(BINARY)-linux-arm64 (static)..."
+		go build -a $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY)-linux-amd64 $(CMD_PKG)
+	@echo "    Building $(DIST_DIR)/$(BINARY)-linux-arm64..."
 	@CGO_ENABLED=1 GOOS=linux GOARCH=arm64 CC=aarch64-linux-gnu-gcc \
-		go build -a $(GO_BUILD_FLAGS_STATIC) -o $(DIST_DIR)/$(BINARY)-linux-arm64 $(CMD_PKG)
-	@echo "--> Linux release binaries built (statically linked)"
+		go build -a $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY)-linux-arm64 $(CMD_PKG)
+	@echo "--> Linux release binaries built"
 
 # ------------------------------------------------------------------------------
 # release-darwin — .app bundles via fyne package (self-contained)
@@ -440,9 +436,9 @@ release-local:
 	$(eval _OUT  := $(DIST_DIR)/$(BINARY)-$(_OS)-$(_ARCH)$(_EXT))
 	@echo "    Building $(_OUT) ..."
 ifeq ($(GOOS_HOST),linux)
-	@echo "    (using static linking for Linux)"
+	@echo "    (building optimised binary for Linux)"
 	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
-		go build -a $(GO_BUILD_FLAGS_STATIC) -o $(_OUT) $(CMD_PKG)
+		go build -a $(GO_BUILD_FLAGS) -o $(_OUT) $(CMD_PKG)
 else ifeq ($(GOOS_HOST),darwin)
 	@echo "    (using fyne package for macOS .app bundle)"
 	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
