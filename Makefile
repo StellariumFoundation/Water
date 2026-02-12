@@ -207,12 +207,15 @@ deps-linux-static:
 		libgl-dev libx11-xcb-dev libxkbcommon-dev \
 		libwayland-dev libvulkan-dev \
 		gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-		libgl1-mesa-dri mesa-utils libosmesa6
+		libgl1-mesa-dri mesa-utils libosmesa6 \
+		makeself
+	@echo "--> Installing fyne CLI..."
+	@go install fyne.io/tools/cmd/fyne@latest
 	@echo "--> Linux static dependencies installed"
 
 deps-windows:
 	@echo "--> Installing Windows (MSYS2) dependencies for Fyne..."
-	pacman --noconfirm -S mingw-w64-x86_64-toolchain mingw-w64-x86_64-pkg-config || true
+	pacman --noconfirm -S mingw-w64-x86_64-toolchain mingw-w64-x86_64-pkg-config
 	@echo "--> Windows dependencies installed"
 deps-darwin:
 	@echo "--> macOS dependencies (Xcode CLT assumed)..."
@@ -374,10 +377,11 @@ endif
 	@ls -lh $(DIST_DIR)/
 
 # ------------------------------------------------------------------------------
-# release-linux — mostly-static binaries with bundled Mesa software renderer
+# release-linux — .run self-extracting installers with bundled Mesa fallback
 # ------------------------------------------------------------------------------
 release-linux: deps-linux-static
-	@echo "--> Building Linux release binaries (mostly-static, OpenGL loaded at runtime)..."
+	@echo "--> Building Linux release .run self-extracting installers..."
+	@test -f $(APP_ICON) || { echo "ERROR: Icon file not found: $(APP_ICON)"; exit 1; }
 	@mkdir -p $(DIST_DIR)
 	@echo "    Building amd64 binary..."
 	@CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
@@ -389,18 +393,23 @@ release-linux: deps-linux-static
 	@$(MAKE) _bundle-linux-mesa ARCH=amd64
 	@echo "--> Packaging Linux arm64 with Mesa software renderer fallback..."
 	@$(MAKE) _bundle-linux-mesa ARCH=arm64
-	@echo "--> Linux release packages built (with Mesa software renderer fallback)"
+	@echo "--> Linux release .run installers built (with Mesa software renderer fallback)"
 
 # Internal target: bundle a Linux binary with Mesa software renderer libs
+# and create a .run self-extracting installer via makeself
 _bundle-linux-mesa:
 	$(eval BUNDLE_DIR := $(DIST_DIR)/$(BINARY)-linux-$(ARCH))
 	$(eval MULTIARCH := $(shell dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null))
 	@mkdir -p $(BUNDLE_DIR)/bin $(BUNDLE_DIR)/lib/dri
+	@# Validate icon file exists
+	@test -f $(APP_ICON) || { echo "ERROR: Icon file not found: $(APP_ICON)"; exit 1; }
 	@# Copy the binary into the bundle
 	@mv $(DIST_DIR)/$(BINARY)-linux-$(ARCH)-bin $(BUNDLE_DIR)/bin/$(BINARY)
 	@# Copy the launcher script
 	@cp scripts/water-launcher.sh $(BUNDLE_DIR)/$(BINARY)
 	@chmod +x $(BUNDLE_DIR)/$(BINARY)
+	@# Copy the icon into the bundle
+	@cp $(APP_ICON) $(BUNDLE_DIR)/icon.png
 	@# Bundle Mesa software rendering libraries
 	@echo "    Copying Mesa software renderer libraries (multiarch=$(MULTIARCH))..."
 	@CANDIDATE_PATHS="/usr/lib /usr/lib64"; \
@@ -413,21 +422,19 @@ _bundle-linux-mesa:
 		if [ -d "$$p" ]; then SEARCH_PATHS="$$SEARCH_PATHS $$p"; fi; \
 	done; \
 	if [ -z "$$SEARCH_PATHS" ]; then \
-		echo "      WARN: no library search paths found"; \
+		echo "ERROR: no library search paths found"; exit 1; \
 	fi; \
 	for lib in libGL.so.1 libGLX.so.0 libGLdispatch.so.0 libEGL.so.1 libGLESv2.so.2; do \
 		SRC=""; \
-		if [ -n "$$SEARCH_PATHS" ]; then \
-			SRC=$$(find $$SEARCH_PATHS \
-				-name "$$lib*" \( -type f -o -type l \) 2>/dev/null | head -1 || true); \
-		fi; \
+		SRC=$$(find $$SEARCH_PATHS \
+			-name "$$lib*" \( -type f -o -type l \) 2>/dev/null | head -1); \
 		if [ -n "$$SRC" ]; then \
 			if [ -L "$$SRC" ]; then \
 				REAL=$$(readlink -f "$$SRC"); \
-				cp "$$REAL" "$(BUNDLE_DIR)/lib/$$(basename $$REAL)" 2>/dev/null || true; \
-				(cd "$(BUNDLE_DIR)/lib" && ln -sf "$$(basename $$REAL)" "$$lib") 2>/dev/null || true; \
+				cp "$$REAL" "$(BUNDLE_DIR)/lib/$$(basename $$REAL)"; \
+				(cd "$(BUNDLE_DIR)/lib" && ln -sf "$$(basename $$REAL)" "$$lib"); \
 			else \
-				cp "$$SRC" "$(BUNDLE_DIR)/lib/$$lib" 2>/dev/null || true; \
+				cp "$$SRC" "$(BUNDLE_DIR)/lib/$$lib"; \
 			fi; \
 			echo "      Bundled $$lib"; \
 		else \
@@ -448,45 +455,49 @@ _bundle-linux-mesa:
 		SRC=""; \
 		if [ -n "$$SEARCH_PATHS" ]; then \
 			SRC=$$(find $$SEARCH_PATHS \
-				-name "$$drv" -type f 2>/dev/null | head -1 || true); \
+				-name "$$drv" -type f 2>/dev/null | head -1); \
 		fi; \
 		if [ -n "$$SRC" ]; then \
-			cp "$$SRC" "$(BUNDLE_DIR)/lib/dri/$$drv" 2>/dev/null || true; \
+			cp "$$SRC" "$(BUNDLE_DIR)/lib/dri/$$drv"; \
 			echo "      Bundled $$drv"; \
 		else \
 			echo "      WARN: $$drv not found on system (searched: $$SEARCH_PATHS)"; \
 		fi; \
 	done
-	@# Create the tarball
-	@echo "    Creating tarball $(BINARY)-linux-$(ARCH).tar.gz..."
-	@cd $(DIST_DIR) && tar czf $(BINARY)-linux-$(ARCH).tar.gz $(BINARY)-linux-$(ARCH)/
+	@# Create the .run self-extracting installer via makeself
+	@echo "    Creating self-extracting installer $(BINARY)-linux-$(ARCH).run..."
+	@command -v makeself >/dev/null 2>&1 || { echo "ERROR: makeself is not installed"; exit 1; }
+	@makeself --nox11 $(BUNDLE_DIR) $(DIST_DIR)/$(BINARY)-linux-$(ARCH).run \
+		"$(BINARY) Installer" ./$(BINARY) "$@"
 	@rm -rf $(BUNDLE_DIR)
-	@echo "    $(DIST_DIR)/$(BINARY)-linux-$(ARCH).tar.gz"
+	@echo "    $(DIST_DIR)/$(BINARY)-linux-$(ARCH).run"
 
 # ------------------------------------------------------------------------------
-# release-darwin — .app bundles via fyne package (self-contained)
+# release-darwin — .dmg disk images via fyne package + hdiutil
 # ------------------------------------------------------------------------------
 release-darwin: deps-darwin
-	@echo "--> Building macOS release .app bundles..."
+	@echo "--> Building macOS release .dmg disk images..."
 	@test -f $(APP_ICON) || { echo "ERROR: Icon file not found: $(APP_ICON)"; exit 1; }
 	@mkdir -p $(DIST_DIR)
-	@echo "    Building $(BINARY)-darwin-amd64.app ..."
+	@echo "    Building $(BINARY)-darwin-amd64.dmg ..."
 	@CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 \
 		fyne package -os darwin -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
 	@test -d $(BINARY).app || { echo "ERROR: fyne package failed to produce $(BINARY).app"; exit 1; }
-	@mv $(BINARY).app $(DIST_DIR)/$(BINARY)-darwin-amd64.app
-	@cd $(DIST_DIR) && zip -r $(BINARY)-darwin-amd64.zip $(BINARY)-darwin-amd64.app && rm -rf $(BINARY)-darwin-amd64.app
-	@echo "    Building $(BINARY)-darwin-arm64.app ..."
+	@hdiutil create -volname "$(BINARY)" -srcfolder $(BINARY).app \
+		-ov -format UDZO $(DIST_DIR)/$(BINARY)-darwin-amd64.dmg
+	@rm -rf $(BINARY).app
+	@echo "    Building $(BINARY)-darwin-arm64.dmg ..."
 	@CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
 		fyne package -os darwin -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
 	@test -d $(BINARY).app || { echo "ERROR: fyne package failed to produce $(BINARY).app"; exit 1; }
-	@mv $(BINARY).app $(DIST_DIR)/$(BINARY)-darwin-arm64.app
-	@cd $(DIST_DIR) && zip -r $(BINARY)-darwin-arm64.zip $(BINARY)-darwin-arm64.app && rm -rf $(BINARY)-darwin-arm64.app
-	@echo "--> macOS release .app bundles built"
+	@hdiutil create -volname "$(BINARY)" -srcfolder $(BINARY).app \
+		-ov -format UDZO $(DIST_DIR)/$(BINARY)-darwin-arm64.dmg
+	@rm -rf $(BINARY).app
+	@echo "--> macOS release .dmg disk images built"
 
 # ------------------------------------------------------------------------------
 # release-windows — .exe with embedded manifest/icon via fyne package
@@ -598,19 +609,20 @@ release-local:
 	$(eval _OUT  := $(DIST_DIR)/$(BINARY)-$(_OS)-$(_ARCH)$(_EXT))
 	@echo "    Building $(_OUT) ..."
 ifeq ($(GOOS_HOST),linux)
-	@echo "    (using mostly-static linking for Linux with Mesa fallback)"
+	@echo "    (using mostly-static linking for Linux → .run installer)"
 	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
 		go build -a $(GO_BUILD_FLAGS_LINUX) -o $(DIST_DIR)/$(BINARY)-$(_OS)-$(_ARCH)-bin $(CMD_PKG)
 	@$(MAKE) _bundle-linux-mesa ARCH=$(_ARCH)
 else ifeq ($(GOOS_HOST),darwin)
-	@echo "    (using fyne package for macOS .app bundle)"
+	@echo "    (using fyne package for macOS .app bundle → .dmg)"
 	@test -f $(APP_ICON) || { echo "ERROR: Icon file not found: $(APP_ICON)"; exit 1; }
 	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
 		fyne package -os darwin -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) -release
 	@test -d $(BINARY).app || { echo "ERROR: fyne package failed to produce $(BINARY).app"; exit 1; }
-	@mv $(BINARY).app $(DIST_DIR)/$(BINARY)-$(_OS)-$(_ARCH).app
-	@cd $(DIST_DIR) && zip -r $(BINARY)-$(_OS)-$(_ARCH).zip $(BINARY)-$(_OS)-$(_ARCH).app && rm -rf $(BINARY)-$(_OS)-$(_ARCH).app
+	@hdiutil create -volname "$(BINARY)" -srcfolder $(BINARY).app \
+		-ov -format UDZO $(DIST_DIR)/$(BINARY)-$(_OS)-$(_ARCH).dmg
+	@rm -rf $(BINARY).app
 else
 	@echo "    (using fyne package for Windows .exe)"
 	@echo "    CC=$${CC:-default} GOARCH=$(_ARCH)"
@@ -623,8 +635,6 @@ else
 				go build $(GO_BUILD_FLAGS_WINDOWS_STATIC) -o $(_OUT) $(CMD_PKG); \
 		}
 	@echo "    Searching for produced .exe files..."
-	@ls -la $(BINARY).exe 2>/dev/null || true
-	@ls -la $(CMD_PKG)/$(BINARY).exe 2>/dev/null || true
 	@if [ -f "$(BINARY).exe" ]; then \
 		mv "$(BINARY).exe" "$(_OUT)"; \
 	elif [ -f "cmd/water/$(BINARY).exe" ]; then \

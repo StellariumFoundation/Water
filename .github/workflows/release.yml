@@ -6,8 +6,8 @@
 # and collects them into a single GitHub Release using the VERSION from the
 # Makefile.
 #
-# Linux:   mostly-static binaries with bundled Mesa software renderer fallback
-# macOS:   .app bundles via fyne package (zipped for release)
+# Linux:   .run self-extracting installers with bundled Mesa software renderer fallback
+# macOS:   .dmg disk images via fyne package + hdiutil
 # Windows: .exe with embedded manifest/icon via fyne package
 #
 # ==============================================================================
@@ -81,24 +81,24 @@ jobs:
     strategy:
       matrix:
         include:
-          # --- Linux: mostly-static binaries with bundled Mesa fallback ---
+          # --- Linux: .run self-extracting installers with bundled Mesa fallback ---
           - goos: linux
             goarch: amd64
             runner: ubuntu-latest
-            artifact: Water-linux-amd64.tar.gz
+            artifact: Water-linux-amd64.run
           - goos: linux
             goarch: arm64
             runner: ubuntu-24.04-arm
-            artifact: Water-linux-arm64.tar.gz
-          # --- macOS: .app bundles (zipped) ---
+            artifact: Water-linux-arm64.run
+          # --- macOS: .dmg disk images ---
           - goos: darwin
             goarch: amd64
             runner: macos-latest
-            artifact: Water-darwin-amd64.zip
+            artifact: Water-darwin-amd64.dmg
           - goos: darwin
             goarch: arm64
             runner: macos-latest
-            artifact: Water-darwin-arm64.zip
+            artifact: Water-darwin-arm64.dmg
           # --- Windows: .exe with embedded manifest/icon ---
           - goos: windows
             goarch: amd64
@@ -124,7 +124,7 @@ jobs:
           cache: true
 
       # --- Linux: install static linking + Mesa software renderer dependencies ---
-      - name: Install Linux dependencies (static + Mesa swrast)
+      - name: Install Linux dependencies (static + Mesa swrast + makeself)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
@@ -137,12 +137,13 @@ jobs:
             libwayland-dev libvulkan-dev \
             libgl1-mesa-dri mesa-utils \
             libgl1 libglx-mesa0 libglvnd0 libegl1 libgles2 \
-            libosmesa6 || true
+            libosmesa6 \
+            makeself
           # Verify Mesa libraries are available for bundling
           echo "=== Mesa library check ==="
           for lib in libGL.so.1 libGLX.so.0 libGLdispatch.so.0 libEGL.so.1 libGLESv2.so.2; do
             find /usr/lib /usr/lib64 /usr/lib/$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo "unknown") \
-              -name "${lib}*" -type f -o -name "${lib}*" -type l 2>/dev/null | head -3 || true
+              -name "${lib}*" -type f -o -name "${lib}*" -type l 2>/dev/null | head -3
           done
 
       # --- macOS: install fyne CLI for .app bundling ---
@@ -200,10 +201,8 @@ jobs:
             export PATH="/c/msys64/mingw64/bin:${PATH}"
           fi
           # Verify icon file exists before building
-          if [ "${{ matrix.goos }}" = "windows" ] || [ "${{ matrix.goos }}" = "darwin" ]; then
-            echo "=== Icon file check ==="
-            ls -la resources/logo-only.png
-          fi
+          echo "=== Icon file check ==="
+          ls -la resources/logo-only.png
           make release-local
 
       - name: List build outputs
