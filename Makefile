@@ -73,8 +73,6 @@ GO_BUILD_FLAGS := -trimpath -ldflags "$(LDFLAGS)"
 # CGO is required for Fyne
 export CGO_ENABLED := 1
 
-# --- Test settings -----------------------------------------------------------
-TEST_TIMEOUT := 15m
 
 # --- Release matrix ----------------------------------------------------------
 RELEASE_TARGETS := linux/amd64 darwin/amd64 darwin/arm64 windows/amd64
@@ -115,6 +113,7 @@ help:
 	@echo "║  make version          Print version info                  ║"
 	@echo "║  make info             Full build environment info         ║"
 	@echo "╚══════════════════════════════════════════════════════════════╝"
+
 
 # ==============================================================================
 # VERSION / INFO
@@ -226,6 +225,13 @@ build-windows:
 	@GOOS=windows GOARCH=amd64 CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc \
 		go build $(GO_BUILD_FLAGS) -o $(BIN_DIR)/$(BINARY)-windows-amd64.exe $(CMD_PKG)
 	@echo "--> $(BIN_DIR)/$(BINARY)-windows-amd64.exe"
+
+# Build Go backend only (no Node.js/frontend required)
+build-dev: mocks
+	@echo "--> Building Go backend (dev mode, no frontend)..."
+	@mkdir -p $(BIN_DIR)
+	@CGO_ENABLED=0 go build $(GO_FLAGS) -o $(BIN_DIR)/$(BINARY_NAME) ./cmd/water
+	@echo "Done! Run with: ./$(BIN_DIR)/$(BINARY_NAME)"
 
 # ==============================================================================
 # RELEASE — optimised binaries for all platforms → dist/
