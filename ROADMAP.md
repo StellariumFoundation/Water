@@ -1,6 +1,6 @@
 # 🗺 Water AI — Feature Roadmap
 
-> Detailed feature-level roadmap for Water AI. Items marked `[x]` are implemented in the current codebase; items marked `[ ]` are planned but not yet built.
+> Exhaustive feature-level roadmap for Water AI. Items marked `[x]` are implemented in the current codebase; items marked `[ ]` are planned but not yet built. Only genuinely implemented features are checked off.
 
 ---
 
@@ -270,7 +270,21 @@
 - [ ] Automatic output validation against user requirements
 - [ ] Output sharing via public/private links
 
----
+- [x] File editor tool for reading, writing, and string replacement
+- [x] Workspace management with per-session directories
+- [x] File upload handler with base64 and text support
+- [x] Workspace static file serving
+- [x] Terminal manager for command output capture
+- [x] Reviewer agent for output quality assurance
+- [x] Conversation summarization for context management
+- [ ] Multi-format output export (PDF, DOCX, XLSX, PPTX)
+- [ ] Output versioning and diff tracking
+- [ ] Collaborative editing (multiple users on same output)
+- [ ] Template system for common output formats
+- [ ] Output gallery / artifact browser
+- [ ] Automated quality scoring of generated outputs
+- [ ] User feedback loop for output refinement
+- [ ] Output sharing and publishing
 
 ## Security & Privacy
 

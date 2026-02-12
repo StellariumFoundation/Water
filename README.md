@@ -205,6 +205,41 @@ Water/
 
 ---
 
+## 💰 Business Model
+
+| Revenue Stream | Description |
+|---|---|
+| **Community Donations** | Voluntary donations from individuals and organizations who benefit from Water AI |
+| **Enterprise Licensing** | Volume licensing and tailored solutions for businesses requiring dedicated support and SLAs |
+| **Usage-Based Pricing** | Fair pricing based on inference and cloud compute consumption for heavy users |
+
+---
+
+## 🏛 The Visionary
+
+| | |
+|---|---|
+| **Visionary** | **John Victor** |
+| **Organization** | Stellarium Foundation |
+| **Mission** | Leverage technology for global prosperity and human advancement |
+| **Goal** | The Elevation to Eden |
+
+John Victor, founder of the **Stellarium Foundation**, conceived Water AI as the technological cornerstone of a broader mission to uplift humanity. The Foundation's work spans multiple initiatives, with Water AI serving as the intelligent core that ties them together.
+
+---
+
+## 💵 Funding
+
+**Funding Ask:** **$600,000** for core platform development, foundational model integration, and key engineering talent.
+
+Funds will be allocated toward:
+- **Core Orchestration Engine** — Advanced task decomposition, multi-model routing, and planning capabilities
+- **Foundational Model Integrations** — Connecting 500+ specialized AI models across every domain
+- **Key Engineering Talent** — Hiring world-class Go, AI/ML, and systems engineers
+- **Infrastructure** — Cloud compute for development, testing, and initial deployment
+
+---
+
 ## 🛠 Getting Started
 
 ### Prerequisites
