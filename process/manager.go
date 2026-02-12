@@ -17,7 +17,6 @@ import (
 // ManagerConfig holds the configuration for the process manager
 type ManagerConfig struct {
 	GatewayPort    string // Port for the gateway server (e.g., "8080")
-	FrontendPort   string // Port for the frontend server (e.g., "8000")
 	GatewayPath    string // Path to the gateway binary or command
 	HealthInterval time.Duration
 	MaxRestartAttempts int
@@ -70,8 +69,7 @@ func NewManager(cfg ManagerConfig) *Manager {
 // Start begins the gateway process and starts monitoring
 func (m *Manager) Start(ctx context.Context) error {
 	m.logger.Info("starting process manager",
-		"gateway_port", m.config.GatewayPort,
-		"frontend_port", m.config.FrontendPort)
+		"gateway_port", m.config.GatewayPort)
 
 	// Start the gateway process
 	if err := m.startGateway(ctx); err != nil {
@@ -288,7 +286,4 @@ func (m *Manager) GetGatewayPort() string {
 	return m.config.GatewayPort
 }
 
-// GetFrontendPort returns the configured frontend port
-func (m *Manager) GetFrontendPort() string {
-	return m.config.FrontendPort
-}
+

@@ -16,16 +16,11 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-const (
-	serverURL = "ws://localhost:7777/ws"
-)
-
 // MainWindow represents the main application window
 type MainWindow struct {
-	app         fyne.App
-	window      fyne.Window
-	state       *client.AppState
-	wsClient    *client.WebSocketClient
+	app    fyne.App
+	window fyne.Window
+	state  *client.AppState
 
 	// UI Components
 	chatView       *chat.ChatView
@@ -38,9 +33,7 @@ type MainWindow struct {
 	panelTabs *container.AppTabs
 
 	// Status
-	connectionStatus *widget.Label
-	connectionIcon   *widget.Icon
-	workspaceLabel   *widget.Label
+	workspaceLabel *widget.Label
 }
 
 // NewMainWindow creates a new main window
@@ -49,13 +42,6 @@ func NewMainWindow(app fyne.App) *MainWindow {
 		app:   app,
 		state: client.NewAppState(),
 	}
-
-	// Initialize WebSocket client
-	mw.wsClient = client.NewWebSocketClient(serverURL, mw.state)
-	mw.wsClient.SetOnStateChange(mw.onStateChange)
-	mw.wsClient.SetOnEvent(mw.onEvent)
-	mw.wsClient.SetOnConnected(mw.onConnected)
-	mw.wsClient.SetOnDisconnected(mw.onDisconnected)
 
 	// Create the window
 	mw.window = app.NewWindow("Water AI")
@@ -81,7 +67,7 @@ func NewMainWindow(app fyne.App) *MainWindow {
 // createUI creates all UI components
 func (mw *MainWindow) createUI() {
 	// Create chat view
-	mw.chatView = chat.NewChatView(mw.state, mw.wsClient)
+	mw.chatView = chat.NewChatView(mw.state, nil)
 
 	// Create panel views
 	mw.browserPanel = panels.NewBrowserPanel(mw.state)
@@ -89,7 +75,7 @@ func (mw *MainWindow) createUI() {
 	mw.terminalPanel = panels.NewTerminalPanel(mw.state)
 
 	// Create settings dialog
-	mw.settingsDialog = settings.NewSettingsDialog(mw.window, mw.state, mw.wsClient)
+	mw.settingsDialog = settings.NewSettingsDialog(mw.window, mw.state, nil)
 
 	// Create tabbed panel
 	mw.panelTabs = container.NewAppTabs(
@@ -115,11 +101,11 @@ func (mw *MainWindow) createUI() {
 
 	// Main layout
 	mainLayout := container.NewBorder(
-		header,      // top
-		statusBar,   // bottom
-		nil,         // left
-		nil,         // right
-		content,     // center
+		header,    // top
+		statusBar, // bottom
+		nil,       // left
+		nil,       // right
+		content,   // center
 	)
 
 	mw.window.SetContent(mainLayout)
@@ -157,11 +143,6 @@ func (mw *MainWindow) createHeader() fyne.CanvasObject {
 
 // createStatusBar creates the status bar
 func (mw *MainWindow) createStatusBar() fyne.CanvasObject {
-	// Connection status
-	mw.connectionIcon = widget.NewIcon(theme.CancelIcon())
-	mw.connectionStatus = widget.NewLabel("Disconnected")
-	mw.connectionStatus.Importance = widget.LowImportance
-
 	// Workspace path
 	workspaceLabel := widget.NewLabel("")
 	workspaceLabel.Importance = widget.LowImportance
@@ -172,9 +153,6 @@ func (mw *MainWindow) createStatusBar() fyne.CanvasObject {
 	return container.NewBorder(
 		nil, nil,
 		container.NewHBox(
-			mw.connectionIcon,
-			mw.connectionStatus,
-			widget.NewSeparator(),
 			workspaceLabel,
 		),
 		nil,
@@ -197,11 +175,6 @@ func (mw *MainWindow) setupKeyboardShortcuts() {
 	mw.window.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyQ, Modifier: fyne.KeyModifierControl}, func(_ fyne.Shortcut) {
 		mw.onClose()
 	})
-
-	// F5: Refresh connection
-	mw.window.Canvas().AddShortcut(&desktop.CustomShortcut{KeyName: fyne.KeyF5}, func(_ fyne.Shortcut) {
-		mw.reconnect()
-	})
 }
 
 // onNewChat handles new chat action
@@ -212,34 +185,6 @@ func (mw *MainWindow) onNewChat() {
 
 	// Refresh UI
 	mw.chatView.Refresh()
-}
-
-// reconnect attempts to reconnect to the server
-func (mw *MainWindow) reconnect() {
-	if mw.state.IsConnected {
-		mw.wsClient.Disconnect()
-	}
-
-	mw.updateConnectionStatus(false, "Reconnecting...")
-
-	go func() {
-		if err := mw.wsClient.Connect(); err != nil {
-			mw.app.SendNotification(&fyne.Notification{
-				Title:   "Connection Error",
-				Content: "Failed to connect to server: " + err.Error(),
-			})
-		}
-	}()
-}
-
-// updateConnectionStatus updates the connection status display
-func (mw *MainWindow) updateConnectionStatus(connected bool, status string) {
-	mw.connectionStatus.SetText(status)
-	if connected {
-		mw.connectionIcon.SetResource(theme.ConfirmIcon())
-	} else {
-		mw.connectionIcon.SetResource(theme.CancelIcon())
-	}
 }
 
 // onStateChange handles state changes
@@ -258,7 +203,7 @@ func (mw *MainWindow) onStateChange() {
 	})
 }
 
-// onEvent handles WebSocket events
+// onEvent handles events
 func (mw *MainWindow) onEvent(eventType string, content interface{}) {
 	// Handle specific events on the main thread
 	fyne.Do(func() {
@@ -318,20 +263,6 @@ func (mw *MainWindow) handleToolResult(tr client.ToolResultEvent) {
 	}
 }
 
-// onConnected handles connection established
-func (mw *MainWindow) onConnected() {
-	fyne.Do(func() {
-		mw.updateConnectionStatus(true, "Connected")
-	})
-}
-
-// onDisconnected handles disconnection
-func (mw *MainWindow) onDisconnected() {
-	fyne.Do(func() {
-		mw.updateConnectionStatus(false, "Disconnected")
-	})
-}
-
 // onClose handles window close
 func (mw *MainWindow) onClose() {
 	// Show confirmation dialog
@@ -340,7 +271,6 @@ func (mw *MainWindow) onClose() {
 		"Are you sure you want to quit?",
 		func(confirmed bool) {
 			if confirmed {
-				mw.wsClient.Disconnect()
 				mw.window.Close()
 			}
 		},
@@ -352,20 +282,6 @@ func (mw *MainWindow) onClose() {
 func (mw *MainWindow) ShowAndRun() {
 	// Show the window
 	mw.window.Show()
-
-	// Set initial connection status
-	mw.updateConnectionStatus(false, "Connecting...")
-
-	// Attempt to connect to the server
-	go func() {
-		if err := mw.wsClient.Connect(); err != nil {
-			// Show error dialog on main thread
-			mw.app.SendNotification(&fyne.Notification{
-				Title:   "Connection Error",
-				Content: "Failed to connect to server: " + err.Error(),
-			})
-		}
-	}()
 
 	// Run the application
 	mw.app.Run()

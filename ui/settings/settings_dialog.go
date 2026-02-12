@@ -15,9 +15,8 @@ import (
 
 // SettingsDialog represents the settings dialog
 type SettingsDialog struct {
-	parent   fyne.Window
-	state    *client.AppState
-	wsClient *client.WebSocketClient
+	parent fyne.Window
+	state  *client.AppState
 
 	// UI Components
 	dialog      dialog.Dialog
@@ -26,11 +25,10 @@ type SettingsDialog struct {
 }
 
 // NewSettingsDialog creates a new settings dialog
-func NewSettingsDialog(parent fyne.Window, state *client.AppState, wsClient *client.WebSocketClient) *SettingsDialog {
+func NewSettingsDialog(parent fyne.Window, state *client.AppState, _ interface{}) *SettingsDialog {
 	sd := &SettingsDialog{
-		parent:   parent,
-		state:    state,
-		wsClient: wsClient,
+		parent: parent,
+		state:  state,
 	}
 	sd.createUI()
 	return sd
@@ -73,14 +71,6 @@ func (sd *SettingsDialog) createUI() {
 
 	apiKeyFormItem := widget.NewFormItem("API Key", sd.apiKeyEntry)
 
-	// Connection status
-	connectionStatus := widget.NewLabel("Disconnected")
-	if sd.state.IsConnected {
-		connectionStatus.SetText("Connected")
-	}
-
-	connectionFormItem := widget.NewFormItem("Status", connectionStatus)
-
 	// Workspace path
 	workspacePath := widget.NewLabel(sd.state.WorkspacePath)
 	if sd.state.WorkspacePath == "" {
@@ -93,17 +83,8 @@ func (sd *SettingsDialog) createUI() {
 	form := widget.NewForm(
 		modelFormItem,
 		apiKeyFormItem,
-		connectionFormItem,
 		workspaceFormItem,
 	)
-
-	// VS Code button
-	vscodeBtn := widget.NewButtonWithIcon("Open VS Code", theme.ComputerIcon(), func() {
-		// TODO: Open VS Code
-		if sd.state.VSCodeURL != "" {
-			// Open VS Code URL in browser
-		}
-	})
 
 	// Save button
 	saveBtn := widget.NewButtonWithIcon("Save", theme.DocumentSaveIcon(), func() {
@@ -129,7 +110,6 @@ func (sd *SettingsDialog) createUI() {
 		widget.NewSeparator(),
 		form,
 		widget.NewSeparator(),
-		vscodeBtn,
 		buttonRow,
 	)
 
@@ -152,10 +132,6 @@ func (sd *SettingsDialog) saveSettings() {
 
 // Show shows the settings dialog
 func (sd *SettingsDialog) Show() {
-	// Update connection status before showing
-	if sd.state.IsConnected {
-		// Connection status label is set during creation
-	}
 	sd.dialog.Show()
 	sd.dialog.Resize(fyne.NewSize(400, 500))
 }

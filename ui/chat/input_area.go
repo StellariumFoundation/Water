@@ -16,15 +16,14 @@ import (
 type InputArea struct {
 	widget.BaseWidget
 
-	state    *client.AppState
-	wsClient *client.WebSocketClient
+	state *client.AppState
 
 	// UI Components
-	entry      *widget.Entry
-	sendBtn    *widget.Button
-	cancelBtn  *widget.Button
-	attachBtn  *widget.Button
-	fileLabel  *widget.Label
+	entry     *widget.Entry
+	sendBtn   *widget.Button
+	cancelBtn *widget.Button
+	attachBtn *widget.Button
+	fileLabel *widget.Label
 
 	// State
 	attachedFiles []string
@@ -34,10 +33,9 @@ type InputArea struct {
 }
 
 // NewInputArea creates a new input area
-func NewInputArea(state *client.AppState, wsClient *client.WebSocketClient) *InputArea {
+func NewInputArea(state *client.AppState) *InputArea {
 	ia := &InputArea{
 		state:         state,
-		wsClient:      wsClient,
 		attachedFiles: []string{},
 	}
 	ia.ExtendBaseWidget(ia)
@@ -73,7 +71,8 @@ func (ia *InputArea) createUI() {
 
 	// Create cancel button
 	ia.cancelBtn = widget.NewButtonWithIcon("Cancel", theme.CancelIcon(), func() {
-		ia.wsClient.CancelQuery()
+		// Cancel current operation
+		ia.state.IsLoading = false
 	})
 
 	// Create attach button
@@ -144,13 +143,7 @@ func (ia *InputArea) Refresh() {
 		ia.cancelBtn.Disable()
 	}
 
-	// Update based on connection state
-	if !ia.state.IsConnected {
-		ia.sendBtn.Disable()
-		ia.entry.SetPlaceHolder("Connecting to server...")
-	} else {
-		ia.entry.SetPlaceHolder("Give Water AI a task to work on...")
-	}
+	ia.entry.SetPlaceHolder("Give Water AI a task to work on...")
 
 	ia.BaseWidget.Refresh()
 }
@@ -169,11 +162,11 @@ func (ia *InputArea) CreateRenderer() fyne.WidgetRenderer {
 
 	// Create main layout
 	content := container.NewBorder(
-		nil,        // top
-		buttonRow,  // bottom
-		nil,        // left
-		nil,        // right
-		ia.entry,   // center
+		nil,       // top
+		buttonRow, // bottom
+		nil,       // left
+		nil,       // right
+		ia.entry,  // center
 	)
 
 	return widget.NewSimpleRenderer(content)

@@ -12,22 +12,20 @@ import (
 type ChatView struct {
 	widget.BaseWidget
 
-	state    *client.AppState
-	wsClient *client.WebSocketClient
+	state *client.AppState
 
 	// UI Components
-	messageList   *MessageList
-	inputArea     *InputArea
-	scroll        *container.Scroll
-	loadingLabel  *widget.Label
-	loadingBox    *fyne.Container
+	messageList  *MessageList
+	inputArea    *InputArea
+	scroll       *container.Scroll
+	loadingLabel *widget.Label
+	loadingBox   *fyne.Container
 }
 
 // NewChatView creates a new chat view
-func NewChatView(state *client.AppState, wsClient *client.WebSocketClient) *ChatView {
+func NewChatView(state *client.AppState, _ interface{}) *ChatView {
 	cv := &ChatView{
-		state:    state,
-		wsClient: wsClient,
+		state: state,
 	}
 
 	cv.ExtendBaseWidget(cv)
@@ -55,7 +53,7 @@ func (cv *ChatView) createUI() {
 	cv.loadingBox.Hide()
 
 	// Create input area
-	cv.inputArea = NewInputArea(cv.state, cv.wsClient)
+	cv.inputArea = NewInputArea(cv.state)
 	cv.inputArea.OnSubmit = cv.handleSubmit
 }
 
@@ -72,21 +70,12 @@ func (cv *ChatView) handleSubmit(text string) {
 	// Clear input
 	cv.inputArea.SetText("")
 
-	// Get attached files
-	files := cv.inputArea.GetAttachedFiles()
+	// Clear attached files
 	cv.inputArea.ClearAttachedFiles()
 
 	// Show loading indicator
 	cv.state.IsLoading = true
 	cv.loadingBox.Show()
-
-	// Initialize agent if not already done
-	if !cv.state.IsAgentInitialized {
-		cv.wsClient.InitAgent(cv.state.SelectedModel, map[string]interface{}{}, 0)
-	}
-
-	// Send query with files
-	cv.wsClient.SendQuery(text, len(cv.state.Messages) > 1, files)
 
 	// Refresh UI
 	cv.Refresh()
@@ -137,14 +126,14 @@ func (cv *ChatView) Refresh() {
 func (cv *ChatView) CreateRenderer() fyne.WidgetRenderer {
 	// Create the layout with loading indicator
 	content := container.NewBorder(
-		nil,                        // top
-		container.NewVBox(          // bottom
+		nil, // top
+		container.NewVBox( // bottom
 			cv.loadingBox,
 			cv.inputArea,
 		),
-		nil,                        // left
-		nil,                        // right
-		cv.scroll,                  // center
+		nil,       // left
+		nil,       // right
+		cv.scroll, // center
 	)
 
 	return widget.NewSimpleRenderer(content)

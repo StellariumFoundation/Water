@@ -326,13 +326,6 @@ build-windows:
 		go build $(GO_BUILD_FLAGS) -o $(BIN_DIR)/$(BINARY)-windows-amd64.exe $(CMD_PKG)
 	@echo "--> $(BIN_DIR)/$(BINARY)-windows-amd64.exe"
 
-# Build Go backend only (no Node.js/frontend required)
-build-dev: mocks
-	@echo "--> Building Go backend (dev mode, no frontend)..."
-	@mkdir -p $(BIN_DIR)
-	@CGO_ENABLED=0 go build $(GO_FLAGS) -o $(BIN_DIR)/$(BINARY_NAME) ./cmd/water
-	@echo "Done! Run with: ./$(BIN_DIR)/$(BINARY_NAME)"
-
 # ==============================================================================
 # RELEASE — auto-detect OS and call the appropriate platform target
 # ==============================================================================

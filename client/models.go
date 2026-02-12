@@ -1,7 +1,6 @@
 package client
 
 import (
-	"encoding/json"
 	"time"
 )
 
@@ -14,33 +13,7 @@ type Message struct {
 	IsHidden  bool   `json:"is_hidden"`
 }
 
-// WebSocketMessage represents a WebSocket message
-type WebSocketMessage struct {
-	Type    string          `json:"type"`
-	Content json.RawMessage `json:"content"`
-}
-
-// InitAgentContent represents the content for init_agent message
-type InitAgentContent struct {
-	ModelName     string                 `json:"model_name"`
-	ToolArgs      map[string]interface{} `json:"tool_args"`
-	ThinkingTokens int                   `json:"thinking_tokens"`
-}
-
-// QueryContent represents the content for query message
-type QueryContent struct {
-	Text   string   `json:"text"`
-	Resume bool     `json:"resume"`
-	Files  []string `json:"files"`
-}
-
-// EditQueryContent represents the content for edit_query message
-type EditQueryContent struct {
-	Text  string   `json:"text"`
-	Files []string `json:"files"`
-}
-
-// Event types
+// Event types (used by UI event handling)
 const (
 	EventTypeConnectionEstablished = "connection_established"
 	EventTypeAgentInitialized      = "agent_initialized"
@@ -54,38 +27,6 @@ const (
 	EventTypeToolCall              = "tool_call"
 	EventTypeToolResult            = "tool_result"
 )
-
-// ConnectionEstablishedEvent represents the connection_established event
-type ConnectionEstablishedEvent struct {
-	Message       string `json:"message"`
-	WorkspacePath string `json:"workspace_path"`
-}
-
-// AgentInitializedEvent represents the agent_initialized event
-type AgentInitializedEvent struct {
-	Message   string `json:"message"`
-	VSCodeURL string `json:"vscode_url"`
-}
-
-// ProcessingEvent represents the processing event
-type ProcessingEvent struct {
-	Message string `json:"message"`
-}
-
-// AgentResponseEvent represents the agent_response event
-type AgentResponseEvent struct {
-	Text string `json:"text"`
-}
-
-// ErrorEvent represents the error event
-type ErrorEvent struct {
-	Message string `json:"message"`
-}
-
-// SystemEvent represents the system event
-type SystemEvent struct {
-	Message string `json:"message"`
-}
 
 // ToolCallEvent represents a tool call event
 type ToolCallEvent struct {
@@ -101,19 +42,19 @@ type ToolResultEvent struct {
 
 // AppState holds the application state
 type AppState struct {
-	Messages          []Message
-	CurrentQuestion   string
-	IsLoading         bool
-	IsConnected       bool
+	Messages           []Message
+	CurrentQuestion    string
+	IsLoading          bool
+	IsConnected        bool
 	IsAgentInitialized bool
-	SelectedModel     string
-	WorkspacePath     string
-	VSCodeURL         string
-	BrowserURL        string
-	BrowserScreenshot []byte
-	CodeContent       string
-	CodeFile          string
-	TerminalOutput    string
+	SelectedModel      string
+	WorkspacePath      string
+	VSCodeURL          string
+	BrowserURL         string
+	BrowserScreenshot  []byte
+	CodeContent        string
+	CodeFile           string
+	TerminalOutput     string
 }
 
 // NewAppState creates a new AppState with default values

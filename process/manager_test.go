@@ -7,29 +7,23 @@ import (
 
 func TestManagerConfigDefaults(t *testing.T) {
 	cfg := ManagerConfig{
-		GatewayPort:  "8080",
-		FrontendPort: "8000",
-		GatewayPath:  "/usr/local/bin/gateway",
+		GatewayPort: "8080",
+		GatewayPath: "/usr/local/bin/gateway",
 	}
 
 	if cfg.GatewayPort != "8080" {
 		t.Errorf("GatewayPort = %s; want 8080", cfg.GatewayPort)
 	}
-
-	if cfg.FrontendPort != "8000" {
-		t.Errorf("FrontendPort = %s; want 8000", cfg.FrontendPort)
-	}
 }
 
 func TestManagerConfigWithCustomValues(t *testing.T) {
 	cfg := ManagerConfig{
-		GatewayPort:         "9090",
-		FrontendPort:        "9000",
-		GatewayPath:         "/custom/gateway",
-		HealthInterval:      10 * time.Second,
-		MaxRestartAttempts:  5,
-		RestartDelay:        2 * time.Second,
-		MaxRestartDelay:     60 * time.Second,
+		GatewayPort:        "9090",
+		GatewayPath:        "/custom/gateway",
+		HealthInterval:     10 * time.Second,
+		MaxRestartAttempts: 5,
+		RestartDelay:       2 * time.Second,
+		MaxRestartDelay:    60 * time.Second,
 	}
 
 	if cfg.HealthInterval != 10*time.Second {
@@ -47,9 +41,8 @@ func TestManagerConfigWithCustomValues(t *testing.T) {
 
 func TestNewManagerSetsDefaults(t *testing.T) {
 	cfg := ManagerConfig{
-		GatewayPort:  "8080",
-		FrontendPort: "8000",
-		GatewayPath:  "",
+		GatewayPort: "8080",
+		GatewayPath: "",
 	}
 
 	manager := NewManager(cfg)
@@ -79,7 +72,6 @@ func TestNewManagerSetsDefaults(t *testing.T) {
 func TestManagerStruct(t *testing.T) {
 	cfg := ManagerConfig{
 		GatewayPort:        "8080",
-		FrontendPort:       "8000",
 		HealthInterval:     5 * time.Second,
 		MaxRestartAttempts: 10,
 		RestartDelay:       1 * time.Second,
