@@ -408,12 +408,9 @@ release-windows: deps-windows
 		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
 	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-amd64.exe || true
-	@echo "    Building $(BINARY)-windows-arm64.exe ..."
-	@CGO_ENABLED=1 GOOS=windows GOARCH=arm64 \
-		fyne package -os windows -name $(BINARY) --app-id $(APP_ID) \
-		-icon $(APP_ICON) -src $(CMD_PKG) \
-		-release
-	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-arm64.exe || true
+	@echo "    Building $(BINARY)-windows-arm64.exe (pure Go, no CGO)..."
+	@CGO_ENABLED=0 GOOS=windows GOARCH=arm64 \
+		go build $(GO_BUILD_FLAGS) -o $(DIST_DIR)/$(BINARY)-windows-arm64.exe $(CMD_PKG)
 	@echo "--> Windows release binaries built"
 
 # ------------------------------------------------------------------------------
@@ -455,11 +452,17 @@ else ifeq ($(GOOS_HOST),darwin)
 	@mv $(BINARY).app $(DIST_DIR)/$(BINARY)-$(_OS)-$(_ARCH).app || true
 	@cd $(DIST_DIR) && zip -r $(BINARY)-$(_OS)-$(_ARCH).zip $(BINARY)-$(_OS)-$(_ARCH).app && rm -rf $(BINARY)-$(_OS)-$(_ARCH).app
 else
+ifeq ($(CGO_ENABLED),0)
+	@echo "    (pure Go build for Windows — CGO disabled)"
+	@CGO_ENABLED=0 GOOS=$(_OS) GOARCH=$(_ARCH) \
+		go build $(GO_BUILD_FLAGS) -o $(_OUT) $(CMD_PKG)
+else
 	@echo "    (using fyne package for Windows .exe)"
 	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
 		fyne package -os windows -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) -release
 	@mv $(BINARY).exe $(_OUT) || true
+endif
 endif
 	@echo "--> $(_OUT)"
 
