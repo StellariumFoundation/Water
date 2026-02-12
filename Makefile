@@ -36,7 +36,7 @@ MODULE     := water-ai
 CMD_PKG    := ./cmd/water
 
 # --- Version info (injected via ldflags) -------------------------------------
-VERSION    := v0.2.0
+VERSION    ?= v0.2.0
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 GO_VERSION := $(shell go version 2>/dev/null | awk '{print $$3}' || echo "unknown")
@@ -98,7 +98,7 @@ export CGO_ENABLED := 1
 # PHONY
 # ==============================================================================
 .PHONY: all help build build-linux build-darwin build-windows \
-        test test-short test-coverage \
+        test test-unit test-race test-vet test-lint test-coverage test-short \
         release release-linux release-darwin release-windows release-local \
         compress checksums \
         clean clean-all \
@@ -120,7 +120,12 @@ help:
 	@echo "║  make build-linux      Cross-compile linux/amd64           ║"
 	@echo "║  make build-darwin     Cross-compile darwin/amd64          ║"
 	@echo "║  make build-windows    Cross-compile windows/amd64         ║"
-	@echo "║  make test             Tests + race detection + coverage   ║"
+	@echo "║  make test             Run ALL tests (vet+lint+unit+race) ║"
+	@echo "║  make test-unit        Unit tests only                     ║"
+	@echo "║  make test-race        Tests with race detection           ║"
+	@echo "║  make test-vet         Run go vet                          ║"
+	@echo "║  make test-lint        Run linter (if available)           ║"
+	@echo "║  make test-coverage    Generate coverage report            ║"
 	@echo "║  make test-short       Quick tests (no race)               ║"
 	@echo "║  make release          Auto-detect OS & build native bins  ║"
 	@echo "║  make release-linux    Build linux/amd64 + linux/arm64     ║"
@@ -212,26 +217,48 @@ security:
 # ==============================================================================
 # TESTING
 # ==============================================================================
-test: mocks
-	@echo "--> Running tests with race detection and coverage..."
+
+# Top-level test target — runs ALL test sub-targets
+test: test-vet test-lint test-unit test-race test-coverage
+	@echo "--> All tests passed"
+
+test-unit: mocks
+	@echo "--> Running unit tests..."
+	@CGO_ENABLED=1 go test -v -count=1 -timeout $(TEST_TIMEOUT) ./...
+	@echo "--> Unit tests passed"
+
+test-race: mocks
+	@echo "--> Running tests with race detection..."
+	@CGO_ENABLED=1 go test -race -v -count=1 -timeout $(TEST_TIMEOUT) ./...
+	@echo "--> Race detection tests passed"
+
+test-vet:
+	@echo "--> Running go vet..."
+	@go vet ./...
+	@echo "--> go vet passed"
+
+test-lint:
+	@echo "--> Running lint checks..."
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run --timeout 5m ./...; \
+	elif command -v staticcheck >/dev/null 2>&1; then \
+		staticcheck ./...; \
+	else \
+		echo "WARN: golangci-lint/staticcheck not installed — skipping lint"; \
+	fi
+	@echo "--> Lint checks passed"
+
+test-coverage: mocks
+	@echo "--> Generating coverage report..."
 	@mkdir -p $(COVERAGE_DIR)
-	@CGO_ENABLED=1 go test -race -v -count=1 -timeout $(TEST_TIMEOUT) \
-		-coverprofile=$(COVERAGE_DIR)/coverage.out -covermode=atomic ./...
+	@CGO_ENABLED=1 go test -coverprofile=$(COVERAGE_DIR)/coverage.out -covermode=atomic -count=1 -timeout $(TEST_TIMEOUT) ./...
 	@go tool cover -func=$(COVERAGE_DIR)/coverage.out | tail -n 1
-	@echo "--> Tests passed"
+	@echo "--> Coverage report: $(COVERAGE_DIR)/coverage.out"
 
 test-short: mocks
 	@echo "--> Running short tests..."
 	@go test -short -v -count=1 -timeout 5m ./...
 	@echo "--> Short tests passed"
-
-test-coverage: mocks
-	@echo "--> Generating coverage report..."
-	@mkdir -p $(COVERAGE_DIR)
-	@go test -coverprofile=$(COVERAGE_DIR)/coverage.out -covermode=atomic -timeout $(TEST_TIMEOUT) ./...
-	@go tool cover -html=$(COVERAGE_DIR)/coverage.out -o $(COVERAGE_DIR)/coverage.html
-	@go tool cover -func=$(COVERAGE_DIR)/coverage.out | tail -n 1
-	@echo "--> Coverage report: $(COVERAGE_DIR)/coverage.html"
 
 # ==============================================================================
 # BUILD — single unified binary (gateway + GUI)
