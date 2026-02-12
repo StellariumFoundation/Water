@@ -28,12 +28,12 @@ SHELL      := /bin/bash
 .SHELLFLAGS := -euo pipefail -c
 
 # --- Project -----------------------------------------------------------------
-BINARY     := water
+BINARY     := Water
 MODULE     := water-ai
 CMD_PKG    := ./cmd/water
 
 # --- Version info (injected via ldflags) -------------------------------------
-VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "v0.1.0-dev")
+VERSION    := v.0.2.0
 GIT_COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 GO_VERSION := $(shell go version 2>/dev/null | awk '{print $$3}' || echo "unknown")
