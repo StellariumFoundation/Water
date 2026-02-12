@@ -4,14 +4,11 @@
 # ==============================================================================
 #
 # This script is executed by the makeself .run self-extracting installer.
-# It installs the Water AI application with:
-#   - Binary and launcher in /opt/Water/
-#   - Desktop entry in ~/.local/share/applications/
-#   - Icons in ~/.local/share/icons/hicolor/
-#   - Mesa software renderer fallback libraries
-#
-# Usage: This script is called automatically by the .run installer.
-#        It can also be run manually from the extracted directory.
+# It installs the Water AI application with full desktop integration:
+#   - Binary + launcher + Mesa fallback libs → ~/.local/share/water-ai/
+#   - Icons → ~/.local/share/icons/hicolor/*/apps/
+#   - .desktop file → ~/.local/share/applications/
+#   - Symlink → ~/.local/bin/water
 #
 # ==============================================================================
 
@@ -19,164 +16,153 @@ set -euo pipefail
 
 APP_NAME="Water"
 APP_ID="ai.water.app"
-INSTALL_DIR="/opt/${APP_NAME}"
-ICON_DIR="${HOME}/.local/share/icons/hicolor"
-DESKTOP_DIR="${HOME}/.local/share/applications"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DISPLAY_NAME="Water AI"
+APP_COMMENT="Water AI Assistant"
+APP_CATEGORIES="Development;Utility;"
 
-# --- Colors for output --------------------------------------------------------
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+# XDG base directories (with sensible defaults)
+XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+LOCAL_BIN="${HOME}/.local/bin"
 
-info()  { echo -e "${GREEN}[INFO]${NC} $*"; }
-warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
-error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+INSTALL_DIR="${XDG_DATA_HOME}/water-ai"
+ICONS_DIR="${XDG_DATA_HOME}/icons/hicolor"
+APPLICATIONS_DIR="${XDG_DATA_HOME}/applications"
 
-# --- Validate extracted contents ----------------------------------------------
-info "Validating installer contents..."
+# The directory where makeself extracted us
+EXTRACT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║              Water AI — Linux Installer                     ║"
+echo "╚══════════════════════════════════════════════════════════════╝"
+echo ""
+echo "Installing to: ${INSTALL_DIR}"
+echo ""
+
+# --- Validate extracted contents ---------------------------------------------
+echo "--> Validating installer contents..."
 
 REQUIRED_FILES=(
     "bin/${APP_NAME}"
     "${APP_NAME}"
-    "icons/logo.png"
-    "icons/logo-only.png"
-    "icons/vscode.png"
+    "assets/logo.png"
+    "assets/logo-only.png"
+    "assets/vscode.png"
 )
 
 for f in "${REQUIRED_FILES[@]}"; do
-    if [ ! -f "${SCRIPT_DIR}/${f}" ]; then
-        error "Missing required file: ${f}"
-        error "The installer archive appears to be incomplete."
+    if [ ! -f "${EXTRACT_DIR}/${f}" ]; then
+        echo "ERROR: Required file missing from installer: ${f}" >&2
         exit 1
     fi
 done
 
-info "All required files present."
+echo "    All required files present."
 
-# --- Install application ------------------------------------------------------
-info "Installing ${APP_NAME} to ${INSTALL_DIR}..."
+# --- Create directories ------------------------------------------------------
+echo "--> Creating directories..."
+mkdir -p "${INSTALL_DIR}/bin"
+mkdir -p "${INSTALL_DIR}/lib/dri"
+mkdir -p "${INSTALL_DIR}/assets"
+mkdir -p "${LOCAL_BIN}"
+mkdir -p "${APPLICATIONS_DIR}"
+mkdir -p "${ICONS_DIR}/256x256/apps"
+mkdir -p "${ICONS_DIR}/128x128/apps"
+mkdir -p "${ICONS_DIR}/64x64/apps"
+mkdir -p "${ICONS_DIR}/48x48/apps"
+mkdir -p "${ICONS_DIR}/scalable/apps"
 
-# Create install directory (needs sudo for /opt)
-if [ -w "$(dirname "${INSTALL_DIR}")" ]; then
-    mkdir -p "${INSTALL_DIR}/bin" "${INSTALL_DIR}/lib/dri" "${INSTALL_DIR}/icons"
-else
-    sudo mkdir -p "${INSTALL_DIR}/bin" "${INSTALL_DIR}/lib/dri" "${INSTALL_DIR}/icons"
+# --- Install application files -----------------------------------------------
+echo "--> Installing application files..."
+
+# Binary
+cp "${EXTRACT_DIR}/bin/${APP_NAME}" "${INSTALL_DIR}/bin/${APP_NAME}"
+chmod +x "${INSTALL_DIR}/bin/${APP_NAME}"
+
+# Launcher script (with Mesa fallback)
+cp "${EXTRACT_DIR}/${APP_NAME}" "${INSTALL_DIR}/${APP_NAME}"
+chmod +x "${INSTALL_DIR}/${APP_NAME}"
+
+# Mesa libraries (if present)
+if [ -d "${EXTRACT_DIR}/lib" ]; then
+    cp -a "${EXTRACT_DIR}/lib/"* "${INSTALL_DIR}/lib/" 2>/dev/null || true
 fi
 
-# Copy binary
-if [ -w "${INSTALL_DIR}" ]; then
-    cp "${SCRIPT_DIR}/bin/${APP_NAME}" "${INSTALL_DIR}/bin/${APP_NAME}"
-    chmod +x "${INSTALL_DIR}/bin/${APP_NAME}"
-else
-    sudo cp "${SCRIPT_DIR}/bin/${APP_NAME}" "${INSTALL_DIR}/bin/${APP_NAME}"
-    sudo chmod +x "${INSTALL_DIR}/bin/${APP_NAME}"
-fi
+# Assets
+cp "${EXTRACT_DIR}/assets/"* "${INSTALL_DIR}/assets/"
 
-# Copy launcher script
-if [ -w "${INSTALL_DIR}" ]; then
-    cp "${SCRIPT_DIR}/${APP_NAME}" "${INSTALL_DIR}/${APP_NAME}"
-    chmod +x "${INSTALL_DIR}/${APP_NAME}"
-else
-    sudo cp "${SCRIPT_DIR}/${APP_NAME}" "${INSTALL_DIR}/${APP_NAME}"
-    sudo chmod +x "${INSTALL_DIR}/${APP_NAME}"
-fi
+echo "    Application files installed."
 
-# Copy icons
-for icon in logo.png logo-only.png vscode.png; do
-    if [ -w "${INSTALL_DIR}" ]; then
-        cp "${SCRIPT_DIR}/icons/${icon}" "${INSTALL_DIR}/icons/${icon}"
-    else
-        sudo cp "${SCRIPT_DIR}/icons/${icon}" "${INSTALL_DIR}/icons/${icon}"
-    fi
+# --- Install icons -----------------------------------------------------------
+echo "--> Installing icons..."
+
+# Use logo-only.png as the app icon (it's the icon without text, best for menus)
+ICON_SRC="${EXTRACT_DIR}/assets/logo-only.png"
+
+# Install at multiple sizes for proper desktop integration
+# We install the same PNG at all sizes; the desktop environment will scale as needed
+for size in 256x256 128x128 64x64 48x48; do
+    cp "${ICON_SRC}" "${ICONS_DIR}/${size}/apps/${APP_ID}.png"
+    echo "    Installed icon: ${ICONS_DIR}/${size}/apps/${APP_ID}.png"
 done
 
-# Copy Mesa software renderer libraries (if present)
-if [ -d "${SCRIPT_DIR}/lib" ]; then
-    if [ -w "${INSTALL_DIR}" ]; then
-        cp -a "${SCRIPT_DIR}/lib/"* "${INSTALL_DIR}/lib/" 2>/dev/null || true
-    else
-        sudo cp -a "${SCRIPT_DIR}/lib/"* "${INSTALL_DIR}/lib/" 2>/dev/null || true
-    fi
-    info "Mesa software renderer libraries installed."
-fi
-
-info "Application files installed to ${INSTALL_DIR}"
-
-# --- Install icons to XDG icon directories ------------------------------------
-info "Installing desktop icons..."
-
-mkdir -p "${ICON_DIR}/48x48/apps"
-mkdir -p "${ICON_DIR}/128x128/apps"
-mkdir -p "${ICON_DIR}/256x256/apps"
-mkdir -p "${ICON_DIR}/scalable/apps"
-
-# Use logo-only.png as the app icon (it's the icon without text)
-for size_dir in 48x48 128x128 256x256; do
-    cp "${SCRIPT_DIR}/icons/logo-only.png" "${ICON_DIR}/${size_dir}/apps/${APP_ID}.png"
-done
-
-# Also install to a generic location for fallback
-cp "${SCRIPT_DIR}/icons/logo-only.png" "${ICON_DIR}/scalable/apps/${APP_ID}.png"
-
-# Update icon cache if available
-if command -v gtk-update-icon-cache >/dev/null 2>&1; then
-    gtk-update-icon-cache -f -t "${ICON_DIR}" 2>/dev/null || true
-fi
-
-info "Icons installed to ${ICON_DIR}"
+# Also install as scalable (PNG works here too)
+cp "${ICON_SRC}" "${ICONS_DIR}/scalable/apps/${APP_ID}.png"
+echo "    Installed icon: ${ICONS_DIR}/scalable/apps/${APP_ID}.png"
 
 # --- Create .desktop file ----------------------------------------------------
-info "Creating desktop entry..."
+echo "--> Creating desktop entry..."
 
-mkdir -p "${DESKTOP_DIR}"
+DESKTOP_FILE="${APPLICATIONS_DIR}/${APP_ID}.desktop"
 
-cat > "${DESKTOP_DIR}/${APP_ID}.desktop" << EOF
+cat > "${DESKTOP_FILE}" <<EOF
 [Desktop Entry]
 Type=Application
-Name=${APP_NAME}
-Comment=Water AI Assistant
+Name=${APP_DISPLAY_NAME}
+Comment=${APP_COMMENT}
 Exec=${INSTALL_DIR}/${APP_NAME} %U
 Icon=${APP_ID}
 Terminal=false
-Categories=Development;Utility;
-StartupNotify=true
+Categories=${APP_CATEGORIES}
 StartupWMClass=${APP_NAME}
-MimeType=x-scheme-handler/water;
+StartupNotify=true
 EOF
 
-# Validate the desktop file if desktop-file-validate is available
-if command -v desktop-file-validate >/dev/null 2>&1; then
-    desktop-file-validate "${DESKTOP_DIR}/${APP_ID}.desktop" 2>/dev/null || true
+chmod +x "${DESKTOP_FILE}"
+echo "    Desktop entry: ${DESKTOP_FILE}"
+
+# --- Create symlink in ~/.local/bin ------------------------------------------
+echo "--> Creating command-line symlink..."
+
+ln -sf "${INSTALL_DIR}/${APP_NAME}" "${LOCAL_BIN}/water"
+echo "    Symlink: ${LOCAL_BIN}/water -> ${INSTALL_DIR}/${APP_NAME}"
+
+# --- Update icon cache (if available) ----------------------------------------
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    echo "--> Updating icon cache..."
+    gtk-update-icon-cache -f -t "${ICONS_DIR}" 2>/dev/null || true
 fi
 
-# Update desktop database if available
+# --- Update desktop database (if available) -----------------------------------
 if command -v update-desktop-database >/dev/null 2>&1; then
-    update-desktop-database "${DESKTOP_DIR}" 2>/dev/null || true
-fi
-
-info "Desktop entry created at ${DESKTOP_DIR}/${APP_ID}.desktop"
-
-# --- Create symlink in /usr/local/bin for PATH access -------------------------
-SYMLINK_PATH="/usr/local/bin/water"
-if [ -w "$(dirname "${SYMLINK_PATH}")" ]; then
-    ln -sf "${INSTALL_DIR}/${APP_NAME}" "${SYMLINK_PATH}"
-    info "Symlink created: ${SYMLINK_PATH} -> ${INSTALL_DIR}/${APP_NAME}"
-elif command -v sudo >/dev/null 2>&1; then
-    sudo ln -sf "${INSTALL_DIR}/${APP_NAME}" "${SYMLINK_PATH}" 2>/dev/null || \
-        warn "Could not create symlink at ${SYMLINK_PATH} (run with sudo for PATH access)"
-else
-    warn "Could not create symlink at ${SYMLINK_PATH} (no sudo available)"
+    echo "--> Updating desktop database..."
+    update-desktop-database "${APPLICATIONS_DIR}" 2>/dev/null || true
 fi
 
 # --- Done ---------------------------------------------------------------------
 echo ""
-info "╔══════════════════════════════════════════════════════════════╗"
-info "║           ${APP_NAME} AI installed successfully!                  ║"
-info "╠══════════════════════════════════════════════════════════════╣"
-info "║  Install location: ${INSTALL_DIR}"
-info "║  Launch from:      Application menu or run 'water' in terminal"
-info "║  Desktop entry:    ${DESKTOP_DIR}/${APP_ID}.desktop"
-info "╚══════════════════════════════════════════════════════════════╝"
-echo ""
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║              Installation Complete!                         ║"
+echo "╠══════════════════════════════════════════════════════════════╣"
+echo "║                                                            ║"
+echo "║  Launch from:                                              ║"
+echo "║    • Application menu (search for 'Water AI')              ║"
+echo "║    • Terminal: water                                       ║"
+echo "║    • Direct: ${INSTALL_DIR}/${APP_NAME}"
+echo "║                                                            ║"
+echo "║  To uninstall:                                             ║"
+echo "║    rm -rf ${INSTALL_DIR}"
+echo "║    rm -f ${LOCAL_BIN}/water"
+echo "║    rm -f ${DESKTOP_FILE}"
+echo "║    rm -f ${ICONS_DIR}/*/apps/${APP_ID}.png"
+echo "║                                                            ║"
+echo "╚══════════════════════════════════════════════════════════════╝"
