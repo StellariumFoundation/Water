@@ -98,8 +98,13 @@ LDFLAGS := -s -w \
 # for systems without a hardware OpenGL driver.
 LDFLAGS_LINUX := $(LDFLAGS) -linkmode external -extldflags '-static-libgcc -static-libstdc++'
 
+# Windows static linking flags: statically link the C runtime so the binary
+# is fully self-contained with no external DLL dependencies beyond system DLLs.
+LDFLAGS_WINDOWS_STATIC := $(LDFLAGS) -linkmode external -extldflags '-static -lpthread -lm'
+
 GO_BUILD_FLAGS := -trimpath -ldflags "$(LDFLAGS)"
 GO_BUILD_FLAGS_LINUX := -trimpath -ldflags "$(LDFLAGS_LINUX)"
+GO_BUILD_FLAGS_WINDOWS_STATIC := -trimpath -ldflags "$(LDFLAGS_WINDOWS_STATIC)"
 
 # CGO is required for Fyne
 export CGO_ENABLED := 1
@@ -460,7 +465,10 @@ release-windows: deps-windows
 		-release
 	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-amd64.exe || true
 	@echo "    Building $(BINARY)-windows-arm64.exe ..."
+	@echo "    (cross-compiling arm64 with CC=$${CC:-aarch64-w64-mingw32-gcc})"
 	@CGO_ENABLED=1 GOOS=windows GOARCH=arm64 \
+		CC=$${CC:-aarch64-w64-mingw32-gcc} \
+		CGO_LDFLAGS="-static -lpthread -lm" \
 		fyne package -os windows -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) \
 		-release
@@ -470,12 +478,22 @@ release-windows: deps-windows
 # ------------------------------------------------------------------------------
 # release-windows-local — build a single .exe for the current arch only (CI use)
 # ------------------------------------------------------------------------------
+# For arm64 cross-compilation, set CC=aarch64-w64-mingw32-gcc and
+# CGO_LDFLAGS="-static -lpthread -lm" in the environment before calling this.
 release-windows-local:
 	@echo "--> Building Windows .exe for $(GOARCH_HOST) with embedded icon..."
 	@mkdir -p $(DIST_DIR)
+ifeq ($(GOARCH_HOST),arm64)
+	@echo "    (cross-compiling for arm64 with CC=$${CC:-aarch64-w64-mingw32-gcc})"
+	@CGO_ENABLED=1 GOOS=windows GOARCH=arm64 \
+		CC=$${CC:-aarch64-w64-mingw32-gcc} \
+		fyne package -os windows -icon $(APP_ICON) --app-id $(APP_ID) \
+		-name $(BINARY) -src $(CMD_PKG) -release
+else
 	@CGO_ENABLED=1 GOOS=windows GOARCH=$(GOARCH_HOST) \
 		fyne package -os windows -icon $(APP_ICON) --app-id $(APP_ID) \
 		-name $(BINARY) -src $(CMD_PKG) -release
+endif
 	@mv $(BINARY).exe $(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe
 	@echo "--> $(DIST_DIR)/$(BINARY)-windows-$(GOARCH_HOST).exe"
 
@@ -508,6 +526,7 @@ else ifeq ($(GOOS_HOST),darwin)
 	@cd $(DIST_DIR) && zip -r $(BINARY)-$(_OS)-$(_ARCH).zip $(BINARY)-$(_OS)-$(_ARCH).app && rm -rf $(BINARY)-$(_OS)-$(_ARCH).app
 else
 	@echo "    (using fyne package for Windows .exe)"
+	@echo "    CC=$${CC:-default} GOARCH=$(_ARCH)"
 	@CGO_ENABLED=1 GOOS=$(_OS) GOARCH=$(_ARCH) \
 		fyne package -os windows -name $(BINARY) --app-id $(APP_ID) \
 		-icon $(APP_ICON) -src $(CMD_PKG) -release
