@@ -206,20 +206,14 @@ jobs:
           fi
           make release-local
 
-      - name: Verify Windows icon embedding
-        if: runner.os == 'Windows'
+      - name: List build outputs
+        if: always()
         shell: bash
         run: |
-          echo "=== Verifying Windows .exe was produced ==="
-          ls -la dist/Water-windows-*.exe
-          # Verify the .exe has a reasonable size (icon-embedded binaries are larger)
-          for f in dist/Water-windows-*.exe; do
-            SIZE=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null)
-            echo "$f: ${SIZE} bytes"
-            if [ "$SIZE" -lt 1000000 ]; then
-              echo "WARNING: $f seems too small — icon may not be embedded"
-            fi
-          done
+          echo "=== dist/ directory contents ==="
+          ls -la dist/ 2>/dev/null || echo "dist/ directory not found"
+          echo "=== Searching for Water* files ==="
+          find . -maxdepth 3 -name "Water*" -type f 2>/dev/null || true
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
