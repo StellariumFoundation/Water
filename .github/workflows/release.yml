@@ -230,7 +230,7 @@ jobs:
           if [ -n "${{ github.event.inputs.version }}" ]; then
             VERSION="${{ github.event.inputs.version }}"
           else
-            VERSION=$(grep -E '^VERSION\s*:=' Makefile | head -1 | sed 's/.*:=\s*//' | xargs)
+            VERSION=$(grep -E '^VERSION\s*(\?=|:=|=)' Makefile | head -1 | sed 's/.*[?:]\?=\s*//' | xargs)
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Resolved version: $VERSION"
