@@ -389,6 +389,7 @@ release-linux: deps-linux-static
 # Internal target: bundle a Linux binary with Mesa software renderer libs
 _bundle-linux-mesa:
 	$(eval BUNDLE_DIR := $(DIST_DIR)/$(BINARY)-linux-$(ARCH))
+	$(eval MULTIARCH := $(shell dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null))
 	@mkdir -p $(BUNDLE_DIR)/bin $(BUNDLE_DIR)/lib/dri
 	@# Copy the binary into the bundle
 	@mv $(DIST_DIR)/$(BINARY)-linux-$(ARCH)-bin $(BUNDLE_DIR)/bin/$(BINARY)
@@ -396,32 +397,42 @@ _bundle-linux-mesa:
 	@cp scripts/water-launcher.sh $(BUNDLE_DIR)/$(BINARY)
 	@chmod +x $(BUNDLE_DIR)/$(BINARY)
 	@# Bundle Mesa software rendering libraries
-	@echo "    Copying Mesa software renderer libraries..."
-	@for lib in libGL.so.1 libGLX.so.0 libGLdispatch.so.0 libEGL.so.1 libGLESv2.so.2; do \
-		SRC=$$(find /usr/lib /usr/lib64 /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu \
-			-name "$$lib*" -type f -o -name "$$lib*" -type l 2>/dev/null | head -1); \
+	@echo "    Copying Mesa software renderer libraries (multiarch=$(MULTIARCH))..."
+	@SEARCH_PATHS="/usr/lib /usr/lib64"; \
+	if [ -n "$(MULTIARCH)" ]; then \
+		SEARCH_PATHS="$$SEARCH_PATHS /usr/lib/$(MULTIARCH)"; \
+	fi; \
+	SEARCH_PATHS="$$SEARCH_PATHS /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu"; \
+	for lib in libGL.so.1 libGLX.so.0 libGLdispatch.so.0 libEGL.so.1 libGLESv2.so.2; do \
+		SRC=$$(find $$SEARCH_PATHS \
+			-name "$$lib*" \( -type f -o -type l \) 2>/dev/null | head -1); \
 		if [ -n "$$SRC" ]; then \
 			if [ -L "$$SRC" ]; then \
 				REAL=$$(readlink -f "$$SRC"); \
-				cp "$$REAL" "$(BUNDLE_DIR)/lib/$$(basename $$REAL)"; \
-				cd "$(BUNDLE_DIR)/lib" && ln -sf "$$(basename $$REAL)" "$$lib" && cd ->/dev/null; \
+				cp "$$REAL" "$(BUNDLE_DIR)/lib/$$(basename $$REAL)" 2>/dev/null || true; \
+				(cd "$(BUNDLE_DIR)/lib" && ln -sf "$$(basename $$REAL)" "$$lib") 2>/dev/null || true; \
 			else \
-				cp "$$SRC" "$(BUNDLE_DIR)/lib/$$lib"; \
+				cp "$$SRC" "$(BUNDLE_DIR)/lib/$$lib" 2>/dev/null || true; \
 			fi; \
 			echo "      Bundled $$lib"; \
 		else \
-			echo "      WARN: $$lib not found on system"; \
+			echo "      WARN: $$lib not found on system (searched: $$SEARCH_PATHS)"; \
 		fi; \
 	done
 	@# Bundle the swrast/llvmpipe DRI driver
-	@for drv in swrast_dri.so kms_swrast_dri.so; do \
-		SRC=$$(find /usr/lib /usr/lib64 /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu \
-			/usr/lib/dri -name "$$drv" -type f 2>/dev/null | head -1); \
+	@SEARCH_PATHS="/usr/lib /usr/lib64 /usr/lib/dri"; \
+	if [ -n "$(MULTIARCH)" ]; then \
+		SEARCH_PATHS="$$SEARCH_PATHS /usr/lib/$(MULTIARCH) /usr/lib/$(MULTIARCH)/dri"; \
+	fi; \
+	SEARCH_PATHS="$$SEARCH_PATHS /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu"; \
+	for drv in swrast_dri.so kms_swrast_dri.so; do \
+		SRC=$$(find $$SEARCH_PATHS \
+			-name "$$drv" -type f 2>/dev/null | head -1); \
 		if [ -n "$$SRC" ]; then \
-			cp "$$SRC" "$(BUNDLE_DIR)/lib/dri/$$drv"; \
+			cp "$$SRC" "$(BUNDLE_DIR)/lib/dri/$$drv" 2>/dev/null || true; \
 			echo "      Bundled $$drv"; \
 		else \
-			echo "      WARN: $$drv not found on system"; \
+			echo "      WARN: $$drv not found on system (searched: $$SEARCH_PATHS)"; \
 		fi; \
 	done
 	@# Create the tarball
