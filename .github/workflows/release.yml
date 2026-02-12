@@ -68,7 +68,7 @@ env:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq gcc g++ pkg-config \
-            libgl1-mesa-dev libglu1-mesa-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
             libx11-dev libxcursor-dev libxrandr-dev \
             libxinerama-dev libxi-dev libxxf86vm-dev \
             libasound2-dev
