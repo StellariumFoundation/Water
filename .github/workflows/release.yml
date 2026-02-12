@@ -82,11 +82,11 @@ jobs:
             binary: Water-linux-amd64
           - goos: linux
             goarch: arm64
-            runner: ubuntu-latest
+            runner: ubuntu-24.04-arm
             binary: Water-linux-arm64
           - goos: darwin
             goarch: amd64
-            runner: macos-latest
+            runner: macos-13
             binary: Water-darwin-amd64
           - goos: darwin
             goarch: arm64
@@ -96,10 +96,6 @@ jobs:
             goarch: amd64
             runner: windows-latest
             binary: Water-windows-amd64.exe
-          - goos: windows
-            goarch: arm64
-            runner: windows-latest
-            binary: Water-windows-arm64.exe
     runs-on: ${{ matrix.runner }}
 
     steps:
@@ -122,8 +118,7 @@ jobs:
             libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev \
             libx11-dev libxcursor-dev libxrandr-dev \
             libxinerama-dev libxi-dev libxxf86vm-dev \
-            libasound2-dev \
-            gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+            libasound2-dev
 
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
