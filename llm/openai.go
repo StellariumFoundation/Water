@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -240,7 +240,7 @@ func (c *OpenAIClient) Generate(
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		body, _ := ioutil.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("OpenAI API error: %d - %s", resp.StatusCode, string(body))
 	}
 

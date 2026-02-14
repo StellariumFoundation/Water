@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"time"
 )
@@ -152,7 +152,7 @@ func (c *GeminiClient) Generate(
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		b, _ := ioutil.ReadAll(resp.Body)
+		b, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("Gemini Error %d: %s", resp.StatusCode, string(b))
 	}
 
