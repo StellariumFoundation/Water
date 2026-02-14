@@ -16,6 +16,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+
+	"water-ai/llm"
+	"water-ai/prompts"
 )
 
 // --- Configuration & Global State ---
@@ -76,13 +79,10 @@ type ChatSession struct {
 	SessionUUID uuid.UUID
 	Workspace   string
 	Manager     *ConnectionManager
-	Agent       *AgentStub // Placeholder for the actual AI Agent
-	mu          sync.Mutex
-}
-
-// AgentStub simulates the AI Agent logic (since core logic source wasn't provided)
-type AgentStub struct {
-	History []string
+	LLMClient    llm.Client
+	History      *llm.MessageHistory
+	SystemPrompt string
+	mu           sync.Mutex
 }
 
 func (s *ChatSession) SendEvent(eventType string, content interface{}) {
@@ -155,16 +155,55 @@ func (s *ChatSession) HandleMessage(data []byte) {
 }
 
 func (s *ChatSession) handleInitAgent(content InitAgentContent) {
-	// Logic to initialize the AI agent would go here.
-	// We create the stub.
-	s.Agent = &AgentStub{History: []string{}}
-	
 	// Create workspace if needed
 	os.MkdirAll(s.Workspace, 0755)
 
+	// Determine API type from model name
+	modelName := content.ModelName
+	if modelName == "" {
+		modelName = "gpt-4-turbo"
+	}
+
+	apiType := llm.APITypeOpenAI
+	if strings.Contains(modelName, "claude") || strings.Contains(modelName, "anthropic") {
+		apiType = llm.APITypeAnthropic
+	} else if strings.Contains(modelName, "gemini") {
+		apiType = llm.APITypeGemini
+	}
+
+	// Read API key from environment
+	apiKey := os.Getenv("LLM_API_KEY")
+	if apiKey == "" {
+		switch apiType {
+		case llm.APITypeOpenAI:
+			apiKey = os.Getenv("OPENAI_API_KEY")
+		case llm.APITypeAnthropic:
+			apiKey = os.Getenv("ANTHROPIC_API_KEY")
+		case llm.APITypeGemini:
+			apiKey = os.Getenv("GEMINI_API_KEY")
+		}
+	}
+
+	cfg := llm.LLMConfig{
+		APIType:        apiType,
+		Model:          modelName,
+		APIKey:         apiKey,
+		MaxRetries:     3,
+		ThinkingTokens: content.ThinkingTokens,
+	}
+
+	client, err := llm.GetClient(cfg)
+	if err != nil {
+		s.SendEvent(EventTypeError, gin.H{"message": fmt.Sprintf("Failed to initialize LLM client: %v", err)})
+		return
+	}
+
+	s.LLMClient = client
+	s.History = llm.NewMessageHistory()
+	s.SystemPrompt = prompts.GetSystemPrompt(prompts.WorkspaceModeLocal, false)
+
 	s.SendEvent(EventTypeAgentInitialized, gin.H{
 		"message": "Agent initialized",
-		"vscode_url": "http://localhost:8080", // Mock URL
 	})
 }
 
@@ -174,13 +213,47 @@ func (s *ChatSession) handleQuery(content QueryContent) {
 		return
 	}
 
+	if s.LLMClient == nil {
+		s.SendEvent(EventTypeError, gin.H{"message": "Agent not initialized. Send init_agent first."})
+		return
+	}
+
 	s.SendEvent(EventTypeProcessing, gin.H{"message": "Processing request..."})
 
-	// SIMULATION: In a real app, you would call the Python/Go Core Agent here
-	time.Sleep(1 * time.Second) // Simulate thinking
-	
-	response := fmt.Sprintf("Simulated AI response to: %s", content.Text)
-	s.SendEvent(EventTypeAgentResponse, gin.H{"text": response})
+	// Add user message to history
+	s.History.AddUserPrompt(content.Text, nil)
+
+	// Call the real LLM client
+	resp, err := s.LLMClient.Generate(
+		s.History.GetMessages(),
+		4096,
+		s.SystemPrompt,
+		0.0,
+		nil,  // tools
+		nil,  // toolChoice
+		nil,  // thinkingTokens
+	)
+	if err != nil {
+		log.Printf("LLM Generate error: %v", err)
+		s.SendEvent(EventTypeError, gin.H{"message": fmt.Sprintf("LLM error: %v", err)})
+		s.SendEvent(EventTypeStreamComplete, gin.H{})
+		return
+	}
+
+	// Add assistant response to history
+	s.History.AddAssistantTurn(resp.Content)
+
+	// Extract text from response blocks and send to client
+	var responseText string
+	for _, block := range resp.Content {
+		if block.Type == llm.ContentTypeText && block.Text != "" {
+			responseText += block.Text
+		}
+	}
+
+	if responseText != "" {
+		s.SendEvent(EventTypeAgentResponse, gin.H{"text": responseText})
+	}
 	s.SendEvent(EventTypeStreamComplete, gin.H{})
 }
 
