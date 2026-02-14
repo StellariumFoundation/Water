@@ -173,13 +173,17 @@ func TestChatSessionHandleSlashCommandEmpty(t *testing.T) {
 	session.handleSlashCommand("")
 }
 
-func TestAgentStub(t *testing.T) {
-	agent := &AgentStub{
-		History: []string{"msg1", "msg2"},
+func TestChatSessionFields(t *testing.T) {
+	session := &ChatSession{}
+
+	// Verify LLMClient is nil before init
+	if session.LLMClient != nil {
+		t.Error("LLMClient should be nil before initialization")
 	}
 
-	if len(agent.History) != 2 {
-		t.Errorf("History length = %d; want 2", len(agent.History))
+	// Verify History is nil before init
+	if session.History != nil {
+		t.Error("History should be nil before initialization")
 	}
 }
 
